@@ -1,0 +1,7 @@
+{
+  "name": "NexPOS - Punto de Venta Inteligente",
+  "description": "Sistema de Punto de Venta (POS) completo con gestión de inventario, terminal de ventas, dashboard de métricas y asistente de negocios potenciado por IA (Gemini).",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
