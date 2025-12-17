@@ -1,94 +1,94 @@
-import React, { useState, useEffect } from 'react';
-import { X, ArrowRightCircle, ArrowLeftCircle, Check } from 'lucide-react';
-import { useDatabase } from '../context/DatabaseContext';
+import React, { useState } from 'react';
+import { X, ArrowUpCircle, ArrowDownCircle, Printer, Save } from 'lucide-react';
 
 interface CashFlowModalProps {
   isOpen: boolean;
   onClose: () => void;
-  type: 'IN' | 'OUT'; // IN = Ingreso, OUT = Retiro
+  type: 'IN' | 'OUT';
+  // Actualizamos para recibir el booleano 'shouldPrint'
+  onConfirm: (amount: number, reason: string, shouldPrint: boolean) => void; 
 }
 
-export const CashFlowModal: React.FC<CashFlowModalProps> = ({ isOpen, onClose, type }) => {
-  const { registerCashMovement } = useDatabase();
+export const CashFlowModal: React.FC<CashFlowModalProps> = ({ isOpen, onClose, type, onConfirm }) => {
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
 
-  // Enfocar el input al abrir
-  useEffect(() => {
-    if (isOpen) {
-      setAmount('');
-      setReason('');
-    }
-  }, [isOpen]);
-
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!amount || !reason) return;
+  const handleSubmit = (shouldPrint: boolean) => {
+    const val = parseFloat(amount);
+    
+    if (!amount || val <= 0) return alert("Ingrese un monto válido");
 
-    const success = await registerCashMovement(type, parseFloat(amount), reason);
-    if (success) {
-      alert(type === 'IN' ? 'Dinero ingresado correctamente.' : 'Retiro registrado correctamente.');
-      onClose();
-    }
+    const finalReason = reason || (type === 'IN' ? 'Ingreso vario' : 'Gasto vario');
+    
+    // Enviamos la decisión de imprimir al padre
+    onConfirm(val, finalReason, shouldPrint);
+    
+    setAmount('');
+    setReason('');
+    onClose();
   };
 
-  const isIngreso = type === 'IN';
+  const isIncome = type === 'IN';
+  const bgClass = isIncome ? 'bg-emerald-600' : 'bg-red-600';
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in">
+      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
         
         {/* Header */}
-        <div className={`p-4 flex justify-between items-center text-white ${isIngreso ? 'bg-green-600' : 'bg-red-600'}`}>
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            {isIngreso ? <ArrowLeftCircle /> : <ArrowRightCircle />}
-            {isIngreso ? 'Ingreso de Efectivo' : 'Retiro de Efectivo'}
-          </h2>
-          <button onClick={onClose} className="hover:bg-white/20 p-1 rounded-full"><X size={24}/></button>
+        <div className={`p-4 text-white flex justify-between items-center ${bgClass}`}>
+          <h3 className="font-bold text-lg flex items-center gap-2">
+            {isIncome ? <ArrowUpCircle /> : <ArrowDownCircle />}
+            {isIncome ? 'Entrada de Dinero' : 'Salida / Gasto'}
+          </h3>
+          <button onClick={onClose}><X size={20}/></button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1">Monto</label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">$</span>
-              <input 
-                type="number" 
-                autoFocus
-                required
-                step="0.01"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="w-full pl-8 p-3 border border-slate-300 rounded-lg text-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="0.00"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1">Motivo / Concepto</label>
-            <textarea 
-              required
-              rows={2}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-              placeholder={isIngreso ? "Ej. Fondo de caja inicial" : "Ej. Pago a proveedor de refrescos"}
+        <div className="p-6">
+          <div className="mb-4">
+            <label className="block text-sm font-bold text-slate-700 mb-1">Monto ($)</label>
+            <input 
+              type="number" 
+              autoFocus
+              className="w-full text-4xl font-bold text-slate-800 border-b-2 border-slate-200 outline-none pb-2 focus:border-slate-400 transition-colors"
+              placeholder="0.00"
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
             />
           </div>
 
-          <button 
-            type="submit"
-            className={`w-full py-3 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95
-              ${isIngreso ? 'bg-green-600 hover:bg-green-700 shadow-green-200' : 'bg-red-600 hover:bg-red-700 shadow-red-200'}
-            `}
-          >
-            <Check size={20} />
-            {isIngreso ? 'Registrar Ingreso' : 'Registrar Retiro'}
-          </button>
-        </form>
+          <div className="mb-8">
+            <label className="block text-sm font-bold text-slate-700 mb-1">Motivo / Razón</label>
+            <input 
+              type="text" 
+              className="w-full p-3 bg-slate-50 rounded-lg outline-none border border-slate-200 focus:ring-2 focus:ring-slate-200 transition-all"
+              placeholder={isIncome ? "Ej. Cambio inicial..." : "Ej. Pago proveedor..."}
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+            />
+          </div>
+
+          {/* BOTONES DE ACCIÓN */}
+          <div className="flex gap-3">
+            {/* Botón 1: Solo Guardar (Ecológico) */}
+            <button 
+                onClick={() => handleSubmit(false)}
+                className="flex-1 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 flex justify-center items-center gap-2 transition-colors"
+            >
+                <Save size={18}/> Solo Guardar
+            </button>
+
+            {/* Botón 2: Guardar e Imprimir */}
+            <button 
+                onClick={() => handleSubmit(true)}
+                className={`flex-1 py-3 rounded-xl font-bold text-white flex justify-center items-center gap-2 shadow-lg transition-transform active:scale-95 ${isIncome ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}
+            >
+                <Printer size={18}/> Imprimir Ticket
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

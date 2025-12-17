@@ -1,5 +1,5 @@
 import React from 'react';
-import { LogOut, Monitor, User as UserIcon } from 'lucide-react';
+import { LogOut, Monitor } from 'lucide-react';
 import { ViewState } from '../types';
 import { useDatabase } from '../context/DatabaseContext';
 
@@ -11,7 +11,9 @@ export const Header: React.FC<HeaderProps> = ({ setView }) => {
   const { currentUser, logout } = useDatabase();
 
   return (
-    <div className="bg-white border-b border-slate-200 px-8 py-4 flex justify-between items-center shadow-sm sticky top-0 z-50">
+    <div className="bg-white border-b border-slate-200 px-8 py-3 flex justify-between items-center shadow-sm z-50">
+      
+      {/* LOGO E IDENTIDAD */}
       <div 
         className="flex items-center gap-3 cursor-pointer group"
         onClick={() => setView('DASHBOARD')}
@@ -25,6 +27,7 @@ export const Header: React.FC<HeaderProps> = ({ setView }) => {
         </h1>
       </div>
       
+      {/* USUARIO Y SALIR */}
       {currentUser && (
         <div className="flex items-center gap-6">
           <div className="text-right hidden md:block">

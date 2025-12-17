@@ -7,6 +7,12 @@ const getClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
+export interface SupplierSuggestion {
+  name: string;
+  category: string;
+  reason: string;
+}
+
 export const analyzeSalesData = async (sales: Sale[], products: Product[]): Promise<string> => {
   const ai = getClient();
   if (!ai) return "Error: API Key no configurada.";
@@ -71,4 +77,35 @@ export const generateProductDescription = async (productName: string, category: 
   } catch (error) {
     return "";
   }
+};
+
+export const suggestNewSuppliers = async (query: string): Promise<SupplierSuggestion[]> => {
+  console.log(`Consultando a Gemini AI para: ${query}`);
+
+  // Simulamos un pequeño retraso de red
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  // Retornamos datos falsos por ahora para que el componente pinte algo
+  return [
+    {
+      name: "Distribuidora Mayorista El Águila",
+      category: "General",
+      reason: "Sugerencia basada en alta rotación de inventario"
+    },
+    {
+      name: "Comercializadora de Bebidas Norte",
+      category: "Bebidas",
+      reason: "Proveedor popular en tu zona geográfica"
+    },
+    {
+      name: "Plásticos y Desechables SA de CV",
+      category: "Insumos",
+      reason: "Coincidencia con productos de limpieza"
+    }
+  ];
+};
+
+// Si tienes otras funciones de IA, agrégalas aquí abajo
+export const analyzeConsumptionPatterns = async () => {
+  return "Análisis pendiente de implementación";
 };

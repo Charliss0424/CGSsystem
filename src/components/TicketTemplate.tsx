@@ -20,10 +20,12 @@ interface TicketTemplateProps {
   change?: number;
   ticketId?: string;
   customerName?: string;
+  isReprint?: boolean; // <--- Nuevo
+  
 }
 
 export const TicketTemplate: React.FC<TicketTemplateProps> = ({ 
-  cart, total, savings, amountTendered, change, ticketId, customerName 
+  cart, total, savings, amountTendered, change, ticketId, customerName, isReprint 
 }) => {
   
   const now = new Date();
@@ -50,8 +52,16 @@ export const TicketTemplate: React.FC<TicketTemplateProps> = ({
 
   return (
     <div style={styles.container}>
-      
+      {isReprint && (
+        <div style={{
+            position: 'absolute', top: '30%', left: '50%', transform: 'translate(-50%, -50%) rotate(-45deg)',
+            fontSize: '24px', fontWeight: 'bold', color: 'rgba(0,0,0,0.1)', border: '2px solid rgba(0,0,0,0.1)', padding: '10px', zIndex: 0
+        }}>
+            REIMPRESIÓN
+        </div>
+      )}
       <div style={styles.header}>
+        {isReprint && <div style={{fontWeight:'bold'}}>*** DUPLICADO ***</div>}
         <div style={{fontSize: '16px', fontWeight: 'bold'}}>{STORE_DATA.name}</div>
         <div>{STORE_DATA.address}</div>
         <div>TEL: {STORE_DATA.phone}</div>

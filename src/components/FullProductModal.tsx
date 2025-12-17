@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Info, Tag, Layers, DollarSign, PlusCircle, Package, Scale, Box, Plus, Trash2, LayoutGrid } from 'lucide-react';
+import { X, Save, Info, Tag, Layers, DollarSign, PlusCircle, Package, Scale, Box, Plus, Trash2, Image as ImageIcon, UploadCloud } from 'lucide-react';
 import { useDatabase } from '../context/DatabaseContext';
 import { Product, ProductPresentation } from '../types';
+import { supabase } from '../services/supabase';
 
 interface FullProductModalProps {
   isOpen: boolean;
@@ -15,12 +16,14 @@ export const FullProductModal: React.FC<FullProductModalProps> = ({ isOpen, onCl
   const [activeTab, setActiveTab] = useState<'info' | 'cat' | 'attr' | 'com'>('info');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [updateGroup, setUpdateGroup] = useState(false);
+  const [isUploading, setIsUploading] = useState(false); // Estado de carga
 
+  // --- ESTADO DEL FORMULARIO ---
   const [formData, setFormData] = useState<Partial<Product>>({
     name: '', sku: '', barcode: '', manufacturerCode: '',
     shortDescription: '', longDescription: '',
     brand: '', manufacturer: '', category: 'General',
-    price: 0, costPrice: 0, stock: 0,
+    price: 0, costPrice: 0, stock: 0, image: '', // Campo Imagen
     width: 0, height: 0, length: 0, weightGross: 0,
     groupId: '', wholesalePrice: 0, wholesaleMin: 0,
     isWeighable: false, packPrice: 0, packQuantity: 0, packBarcode: '',
@@ -28,18 +31,20 @@ export const FullProductModal: React.FC<FullProductModalProps> = ({ isOpen, onCl
     presentations: []
   });
 
+  // --- CARGA INICIAL ---
   useEffect(() => {
     if (productToEdit) {
       setFormData({
         ...productToEdit,
         presentations: productToEdit.presentations || [],
         contentPerUnit: productToEdit.contentPerUnit || 0,
-        contentUnitPrice: productToEdit.contentUnitPrice || 0
+        contentUnitPrice: productToEdit.contentUnitPrice || 0,
+        image: productToEdit.image || '' // Asegurar que cargue la imagen
       });
       setUpdateGroup(false);
     } else {
       setFormData({
-        name: '', sku: '', barcode: '', price: 0, costPrice: 0, stock: 0, category: 'General',
+        name: '', sku: '', barcode: '', price: 0, costPrice: 0, stock: 0, category: 'General', image: '',
         groupId: '', wholesalePrice: 0, wholesaleMin: 0,
         isWeighable: false, packPrice: 0, packQuantity: 0, packBarcode: '',
         contentPerUnit: 0, contentUnitPrice: 0,
@@ -49,34 +54,15 @@ export const FullProductModal: React.FC<FullProductModalProps> = ({ isOpen, onCl
     setActiveTab('info');
   }, [productToEdit, isOpen]);
 
-  // --- LÓGICA DE TECLA ENTER (Navegación rápida) ---
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
-    if (e.key === 'Enter') {
-        // Evitar que se envíe el formulario si no es el botón de guardar
-        if ((e.target as HTMLElement).tagName !== 'TEXTAREA') { // Permitir enter en textareas
-            e.preventDefault();
-            const form = e.currentTarget;
-            // Buscar todos los inputs habilitados
-            const inputs = Array.from(form.querySelectorAll('input:not([disabled]), select:not([disabled]), button[type="submit"]'));
-            const index = inputs.indexOf(e.target as HTMLElement);
-            
-            // Mover foco al siguiente
-            if (index > -1 && index < inputs.length - 1) {
-                (inputs[index + 1] as HTMLElement).focus();
-            }
-        }
-    }
-  };
+  if (!isOpen) return null;
 
-  // --- MANEJO DE CAMBIOS ---
+  // --- MANEJADORES ---
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
-    
     if (type === 'checkbox') {
         const checked = (e.target as HTMLInputElement).checked;
         setFormData(prev => ({ ...prev, [name]: checked }));
     } else if (type === 'number') {
-        // Si el usuario borra todo, permitimos que quede vacío visualmente (aunque el estado sea 0 o string vacío temporal)
         const val = value === '' ? 0 : parseFloat(value);
         setFormData(prev => ({ ...prev, [name]: val }));
     } else {
@@ -84,12 +70,43 @@ export const FullProductModal: React.FC<FullProductModalProps> = ({ isOpen, onCl
     }
   };
 
-  // --- SELECCIONAR TEXTO AL ENFOCAR (Para borrar el 0 fácil) ---
-  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-    e.target.select();
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => e.target.select();
+
+  // --- SUBIDA DE IMAGEN ---
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        // 1. Subir
+        const { error: uploadError } = await supabase.storage
+            .from('product-images')
+            .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        // 2. Obtener URL
+        const { data } = supabase.storage
+            .from('product-images')
+            .getPublicUrl(filePath);
+
+        // 3. Guardar en estado
+        setFormData(prev => ({ ...prev, image: data.publicUrl }));
+        
+    } catch (error: any) {
+        console.error('Error subiendo imagen:', error);
+        alert('Error al subir la imagen. Verifica tu conexión.');
+    } finally {
+        setIsUploading(false);
+    }
   };
 
-  // ... (Funciones de Presentación, Categoría, Submit siguen igual) ...
+  // --- PRESENTACIONES ---
   const addPresentation = () => {
     setFormData(prev => ({ ...prev, presentations: [...(prev.presentations || []), { id: crypto.randomUUID(), name: '', barcode: '', quantity: 1, price: 0 }] }));
   };
@@ -99,22 +116,31 @@ export const FullProductModal: React.FC<FullProductModalProps> = ({ isOpen, onCl
   const removePresentation = (index: number) => {
     const list = [...(formData.presentations || [])]; list.splice(index, 1); setFormData(prev => ({ ...prev, presentations: list }));
   };
+
   const handleQuickAddCategory = async () => {
-    const newCat = prompt("Nueva categoría:"); if (newCat) { await addCategory(newCat); setFormData(p => ({ ...p, category: newCat })); }
+    const newCat = prompt("Nueva categoría:"); 
+    if (newCat) { await addCategory(newCat); setFormData(p => ({ ...p, category: newCat })); }
   };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setIsSubmitting(true);
     try {
-      if (productToEdit?.id) await updateProduct({ ...productToEdit, ...formData } as Product, updateGroup);
-      else await addProduct(formData as Product);
+      if (productToEdit?.id) {
+          // @ts-ignore
+          await updateProduct({ ...productToEdit, ...formData } as Product, updateGroup);
+      } else {
+          await addProduct(formData as Product);
+      }
       onClose();
-    } catch(e) { console.error(e); } finally { setIsSubmitting(false); }
+    } catch(e) { console.error(e); } 
+    finally { setIsSubmitting(false); }
   };
-  const TabButton = ({ id, label, icon: Icon }: any) => (
-    <button type="button" onClick={() => setActiveTab(id)} className={`flex items-center gap-2 px-6 py-4 text-sm font-medium border-b-2 transition-colors ${activeTab === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}><Icon size={18} /> {label}</button>
-  );
 
-  if (!isOpen) return null;
+  const TabButton = ({ id, label, icon: Icon }: any) => (
+    <button type="button" onClick={() => setActiveTab(id)} className={`flex items-center gap-2 px-6 py-4 text-sm font-medium border-b-2 transition-colors ${activeTab === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+        <Icon size={18} /> {label}
+    </button>
+  );
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -132,28 +158,68 @@ export const FullProductModal: React.FC<FullProductModalProps> = ({ isOpen, onCl
           <TabButton id="com" label="Info Comercial" icon={DollarSign} />
         </div>
 
-        {/* AGREGAMOS handleKeyDown AQUÍ AL FORMULARIO */}
-        <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} className="flex-1 overflow-y-auto p-8 bg-white">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 bg-white">
           
+          {/* --- PESTAÑA: INFORMACIÓN BÁSICA (CON FOTO) --- */}
           {activeTab === 'info' && (
             <div className="space-y-6 animate-in fade-in duration-300">
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                   <label className="block text-sm font-bold text-slate-700 mb-2">SKU (Interno)</label>
-                   <input name="sku" value={formData.sku} onChange={handleChange} className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                   <label className="block text-sm font-bold text-slate-700 mb-2">Código de Barras</label>
-                   <input name="barcode" value={formData.barcode} onChange={handleChange} className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-              <div>
-                 <label className="block text-sm font-bold text-slate-700 mb-2">Nombre del Producto</label>
-                 <input required name="name" value={formData.name} onChange={handleChange} className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                 <label className="block text-sm font-bold text-slate-700 mb-2">Descripción Corta</label>
-                 <input name="shortDescription" value={formData.shortDescription} onChange={handleChange} className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="Resumen para ticket" />
+              
+              {/* ESTRUCTURA DE COLUMNAS: FOTO A LA IZQUIERDA, DATOS A LA DERECHA */}
+              <div className="flex flex-col md:flex-row gap-6">
+                  
+                  {/* COLUMNA IZQUIERDA: FOTO */}
+                  <div className="w-full md:w-1/3">
+                      <label className="block text-sm font-bold text-slate-700 mb-2">Imagen del Producto</label>
+                      <div className="border-2 border-dashed border-slate-300 rounded-xl h-48 flex flex-col items-center justify-center bg-slate-50 relative overflow-hidden group hover:border-blue-500 transition-colors cursor-pointer">
+                          
+                          {/* Previsualización */}
+                          {formData.image ? (
+                              <img src={formData.image} alt="Producto" className="w-full h-full object-contain p-2" />
+                          ) : (
+                              <div className="text-center text-slate-400">
+                                  <ImageIcon size={32} className="mx-auto mb-2"/>
+                                  <span className="text-xs font-medium">Click para subir imagen</span>
+                              </div>
+                          )}
+                          
+                          {/* Input invisible */}
+                          <input 
+                              type="file" 
+                              accept="image/*" 
+                              onChange={handleImageUpload} 
+                              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                          />
+                          
+                          {/* Overlay de carga */}
+                          {isUploading && (
+                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white font-bold text-sm">
+                                  Subiendo...
+                              </div>
+                          )}
+                      </div>
+                  </div>
+
+                  {/* COLUMNA DERECHA: CAMPOS DE TEXTO */}
+                  <div className="flex-1 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">SKU (Interno)</label>
+                            <input name="sku" value={formData.sku} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">Código de Barras</label>
+                            <input name="barcode" value={formData.barcode} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-1">Nombre del Producto</label>
+                        <input required name="name" value={formData.name} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-1">Descripción Corta</label>
+                        <input name="shortDescription" value={formData.shortDescription} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="Resumen para ticket" />
+                    </div>
+                  </div>
               </div>
             </div>
           )}
@@ -181,58 +247,29 @@ export const FullProductModal: React.FC<FullProductModalProps> = ({ isOpen, onCl
 
           {activeTab === 'com' && (
             <div className="space-y-6 animate-in fade-in duration-300">
-                
-                {/* 1. PRECIOS BASE - APLICAMOS onFocus={handleFocus} */}
                 <div className="grid grid-cols-3 gap-6">
-                    <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-2">Precio Venta (Unitario)</label>
-                        <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-                            <input type="number" name="price" value={formData.price} onFocus={handleFocus} onChange={handleChange} className="w-full pl-6 p-3 border border-slate-300 rounded-lg text-lg font-bold outline-none focus:ring-2 focus:ring-blue-500" />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-2">Costo (Referencia)</label>
-                        <input type="number" name="costPrice" value={formData.costPrice} onFocus={handleFocus} onChange={handleChange} className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-2">Stock Total (Unidades)</label>
-                        <input type="number" name="stock" value={formData.stock} onFocus={handleFocus} onChange={handleChange} className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
-                    </div>
+                    <div><label className="block text-sm font-bold text-slate-700 mb-2">Precio Venta (Unitario)</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span><input type="number" name="price" value={formData.price} onFocus={handleFocus} onChange={handleChange} className="w-full pl-6 p-3 border border-slate-300 rounded-lg text-lg font-bold outline-none focus:ring-2 focus:ring-blue-500" /></div></div>
+                    <div><label className="block text-sm font-bold text-slate-700 mb-2">Costo (Referencia)</label><input type="number" name="costPrice" value={formData.costPrice} onFocus={handleFocus} onChange={handleChange} className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
+                    <div><label className="block text-sm font-bold text-slate-700 mb-2">Stock Total</label><input type="number" name="stock" value={formData.stock} onFocus={handleFocus} onChange={handleChange} className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
                 </div>
 
-                {/* 2. MAYOREO - APLICAMOS onFocus={handleFocus} */}
                 <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-100 mt-6 relative overflow-hidden">
-                    <h3 className="font-bold text-indigo-800 mb-2 flex items-center gap-2 relative z-10"><Tag size={18}/> Estrategia de Mayoreo (Mix & Match)</h3>
+                    <h3 className="font-bold text-indigo-800 mb-2 flex items-center gap-2 relative z-10"><Tag size={18}/> Estrategia de Mayoreo</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
-                        <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-1">ID de Grupo</label>
-                            <input name="groupId" value={formData.groupId || ''} onChange={handleChange} className="w-full p-3 border border-indigo-200 rounded-lg uppercase bg-white outline-none focus:border-indigo-500" placeholder="Ej. REFRESCOS"/>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-1">Precio Mayoreo</label>
-                            <input type="number" name="wholesalePrice" value={formData.wholesalePrice || ''} onFocus={handleFocus} onChange={handleChange} className="w-full p-3 border border-indigo-200 rounded-lg text-emerald-600 font-bold bg-white outline-none focus:border-indigo-500" placeholder="0.00"/>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-1">Cant. Mínima</label>
-                            <input type="number" name="wholesaleMin" value={formData.wholesaleMin || ''} onFocus={handleFocus} onChange={handleChange} className="w-full p-3 border border-indigo-200 rounded-lg bg-white outline-none focus:border-indigo-500" placeholder="Ej. 3"/>
-                        </div>
+                        <div><label className="block text-sm font-bold text-slate-700 mb-1">ID de Grupo</label><input name="groupId" value={formData.groupId || ''} onChange={handleChange} className="w-full p-3 border border-indigo-200 rounded-lg uppercase bg-white outline-none focus:border-indigo-500" placeholder="Ej. REFRESCOS"/></div>
+                        <div><label className="block text-sm font-bold text-slate-700 mb-1">Precio Mayoreo</label><input type="number" name="wholesalePrice" value={formData.wholesalePrice || ''} onFocus={handleFocus} onChange={handleChange} className="w-full p-3 border border-indigo-200 rounded-lg text-emerald-600 font-bold bg-white outline-none focus:border-indigo-500" placeholder="0.00"/></div>
+                        <div><label className="block text-sm font-bold text-slate-700 mb-1">Cant. Mínima</label><input type="number" name="wholesaleMin" value={formData.wholesaleMin || ''} onFocus={handleFocus} onChange={handleChange} className="w-full p-3 border border-indigo-200 rounded-lg bg-white outline-none focus:border-indigo-500" placeholder="Ej. 3"/></div>
                     </div>
-                    {productToEdit && formData.groupId && (
-                        <div className="mt-4 flex items-center gap-3 bg-white p-3 rounded-lg border border-indigo-200 shadow-sm relative z-10">
-                            <input type="checkbox" id="updateGroup" checked={updateGroup} onChange={(e) => setUpdateGroup(e.target.checked)} className="w-5 h-5 text-indigo-600 rounded cursor-pointer"/>
-                            <label htmlFor="updateGroup" className="text-sm text-slate-700 font-medium cursor-pointer select-none">Aplicar a TODOS los productos del grupo <span className="font-bold text-indigo-600">{formData.groupId}</span></label>
-                        </div>
-                    )}
+                    {productToEdit && formData.groupId && (<div className="mt-4 flex items-center gap-3 bg-white p-3 rounded-lg border border-indigo-200 shadow-sm relative z-10"><input type="checkbox" id="updateGroup" checked={updateGroup} onChange={(e) => setUpdateGroup(e.target.checked)} className="w-5 h-5 text-indigo-600 rounded cursor-pointer"/><label htmlFor="updateGroup" className="text-sm text-slate-700 font-medium cursor-pointer select-none">Aplicar a TODOS los productos del grupo <span className="font-bold text-indigo-600">{formData.groupId}</span></label></div>)}
                 </div>
 
-                {/* 3. VENTA SUELTA - APLICAMOS onFocus={handleFocus} */}
+                {/* VENTA SUELTA (Contenido Unitario) */}
                 <div className="bg-purple-50 p-5 rounded-xl border border-purple-100 mt-4 relative overflow-hidden">
-                    <h3 className="font-bold text-purple-800 mb-4 flex items-center gap-2"><LayoutGrid size={18}/> Venta Suelta (Sub-unidades)</h3>
+                    <h3 className="font-bold text-purple-800 mb-4 flex items-center gap-2"><Plus size={18}/> Venta Suelta (Sub-unidades)</h3>
                     <div className="grid grid-cols-2 gap-6">
                         <div>
                             <label className="block text-sm font-bold text-slate-700 mb-1">Contenido de la Unidad</label>
-                            <input type="number" name="contentPerUnit" value={formData.contentPerUnit || ''} onFocus={handleFocus} onChange={handleChange} className="w-full p-2 border border-purple-200 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 outline-none" placeholder="Ej. 20"/>
+                            <input type="number" name="contentPerUnit" value={formData.contentPerUnit || ''} onFocus={handleFocus} onChange={handleChange} className="w-full p-2 border border-purple-200 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 outline-none" placeholder="Ej. 20 (Cigarros)"/>
                         </div>
                         <div>
                             <label className="block text-sm font-bold text-slate-700 mb-1">Precio por Pieza Suelta</label>
@@ -241,67 +278,20 @@ export const FullProductModal: React.FC<FullProductModalProps> = ({ isOpen, onCl
                     </div>
                 </div>
 
-                {/* 4. PRESENTACIÓN - APLICAMOS onFocus={handleFocus} */}
                 <div className="bg-orange-50 p-5 rounded-xl border border-orange-100 mt-4 relative overflow-hidden">
                     <h3 className="font-bold text-orange-800 mb-4 flex items-center gap-2"><Package size={18}/> Presentación Básica / Medida</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="flex items-center gap-3 bg-white p-3 rounded-lg border border-orange-200 shadow-sm">
-                            <input type="checkbox" name="isWeighable" checked={!!formData.isWeighable} onChange={handleChange} className="w-5 h-5 text-orange-600 rounded cursor-pointer"/>
-                            <div className="flex-1"><label className="block text-sm font-bold text-slate-700">Producto a Granel (Báscula)</label><p className="text-[10px] text-slate-500">Se vende por kilo/fracción.</p></div>
-                            <Scale className="text-orange-400" size={24} />
-                        </div>
-                        <div className="space-y-3 p-3 bg-white border border-orange-200 rounded-lg shadow-sm">
-                            <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-1">Contenido</label>
-                                    <input type="number" name="packQuantity" value={formData.packQuantity || ''} onFocus={handleFocus} onChange={handleChange} className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Ej. 12"/>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-1">Precio Paquete</label>
-                                    <input type="number" name="packPrice" value={formData.packPrice || ''} onFocus={handleFocus} onChange={handleChange} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-bold text-orange-700 focus:ring-2 focus:ring-orange-500 outline-none" placeholder="$0.00"/>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 mb-1">Cód. Barras Caja</label>
-                                <input name="packBarcode" value={formData.packBarcode || ''} onChange={handleChange} className="w-full p-2 border border-slate-200 rounded-lg text-xs font-mono focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Escanea código caja..."/>
-                            </div>
-                        </div>
+                        <div className="flex items-center gap-3 bg-white p-3 rounded-lg border border-orange-200 shadow-sm"><input type="checkbox" name="isWeighable" checked={!!formData.isWeighable} onChange={handleChange} className="w-5 h-5 text-orange-600 rounded cursor-pointer"/><div className="flex-1"><label className="block text-sm font-bold text-slate-700">Producto a Granel (Báscula)</label><p className="text-[10px] text-slate-500">Se vende por kilo/fracción.</p></div><Scale className="text-orange-400" size={24} /></div>
+                        <div className="space-y-3 p-3 bg-white border border-orange-200 rounded-lg shadow-sm"><div className="grid grid-cols-2 gap-2"><div><label className="block text-xs font-bold text-slate-500 mb-1">Contenido</label><input type="number" name="packQuantity" value={formData.packQuantity || ''} onFocus={handleFocus} onChange={handleChange} className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Ej. 12"/></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Precio Paquete</label><input type="number" name="packPrice" value={formData.packPrice || ''} onFocus={handleFocus} onChange={handleChange} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-bold text-orange-700 focus:ring-2 focus:ring-orange-500 outline-none" placeholder="$0.00"/></div></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Cód. Barras Caja</label><input name="packBarcode" value={formData.packBarcode || ''} onChange={handleChange} className="w-full p-2 border border-slate-200 rounded-lg text-xs font-mono focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Escanea código caja..."/></div></div>
                     </div>
                 </div>
 
-                {/* 5. MULTI PRESENTACIONES - APLICAMOS onFocus={handleFocus} */}
                 <div className="bg-blue-50 p-5 rounded-xl border border-blue-100 mt-4 relative">
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="font-bold text-blue-800 flex items-center gap-2"><Box size={18}/> Múltiples Presentaciones</h3>
-                        <button type="button" onClick={addPresentation} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-blue-700 transition-colors shadow-sm"><Plus size={14}/> Agregar Variante</button>
-                    </div>
-                    <div className="space-y-2">
-                        {(formData.presentations || []).map((pres, idx) => (
-                            <div key={pres.id || idx} className="flex flex-wrap md:flex-nowrap gap-2 items-center bg-white p-2 rounded-lg border border-blue-200 shadow-sm">
-                                <div className="flex-1 min-w-[120px]">
-                                    <label className="text-[10px] text-slate-400 font-bold block">Nombre</label>
-                                    <input value={pres.name} onChange={(e) => updatePresentation(idx, 'name', e.target.value)} className="w-full p-1 border-b border-slate-200 outline-none text-sm focus:border-blue-500" placeholder="Ej. Caja Master"/>
-                                </div>
-                                <div className="w-full md:w-1/4">
-                                    <label className="text-[10px] text-slate-400 font-bold block">Cód. Barras</label>
-                                    <input value={pres.barcode} onChange={(e) => updatePresentation(idx, 'barcode', e.target.value)} className="w-full p-1 border-b border-slate-200 outline-none text-sm font-mono focus:border-blue-500" placeholder="Escanea..."/>
-                                </div>
-                                <div className="w-20">
-                                    <label className="text-[10px] text-slate-400 font-bold block">Contenido</label>
-                                    <input type="number" value={pres.quantity} onFocus={handleFocus} onChange={(e) => updatePresentation(idx, 'quantity', parseFloat(e.target.value))} className="w-full p-1 border-b border-slate-200 outline-none text-sm text-center focus:border-blue-500" />
-                                </div>
-                                <div className="w-24">
-                                    <label className="text-[10px] text-slate-400 font-bold block">Precio</label>
-                                    <input type="number" value={pres.price} onFocus={handleFocus} onChange={(e) => updatePresentation(idx, 'price', parseFloat(e.target.value))} className="w-full p-1 border-b border-slate-200 outline-none text-sm font-bold text-blue-600 text-right focus:border-blue-500" placeholder="$0.00"/>
-                                </div>
-                                <button type="button" onClick={() => removePresentation(idx)} className="text-red-300 hover:text-red-500 p-2 hover:bg-red-50 rounded transition-colors self-end"><Trash2 size={16}/></button>
-                            </div>
-                        ))}
-                    </div>
+                    <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-blue-800 flex items-center gap-2"><Box size={18}/> Múltiples Presentaciones</h3><button type="button" onClick={addPresentation} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-blue-700 transition-colors shadow-sm"><Plus size={14}/> Agregar Variante</button></div>
+                    <div className="space-y-2">{(formData.presentations || []).map((pres, idx) => (<div key={pres.id || idx} className="flex flex-wrap md:flex-nowrap gap-2 items-center bg-white p-2 rounded-lg border border-blue-200 shadow-sm"><div className="flex-1 min-w-[120px]"><label className="text-[10px] text-slate-400 font-bold block">Nombre</label><input value={pres.name} onChange={(e) => updatePresentation(idx, 'name', e.target.value)} className="w-full p-1 border-b border-slate-200 outline-none text-sm focus:border-blue-500" placeholder="Ej. Caja Master"/></div><div className="w-full md:w-1/4"><label className="text-[10px] text-slate-400 font-bold block">Cód. Barras</label><input value={pres.barcode} onChange={(e) => updatePresentation(idx, 'barcode', e.target.value)} className="w-full p-1 border-b border-slate-200 outline-none text-sm font-mono focus:border-blue-500" placeholder="Escanea..."/></div><div className="w-20"><label className="text-[10px] text-slate-400 font-bold block">Contenido</label><input type="number" value={pres.quantity} onFocus={handleFocus} onChange={(e) => updatePresentation(idx, 'quantity', parseFloat(e.target.value))} className="w-full p-1 border-b border-slate-200 outline-none text-sm text-center focus:border-blue-500" /></div><div className="w-24"><label className="text-[10px] text-slate-400 font-bold block">Precio</label><input type="number" value={pres.price} onFocus={handleFocus} onChange={(e) => updatePresentation(idx, 'price', parseFloat(e.target.value))} className="w-full p-1 border-b border-slate-200 outline-none text-sm font-bold text-blue-600 text-right focus:border-blue-500" placeholder="$0.00"/></div><button type="button" onClick={() => removePresentation(idx)} className="text-red-300 hover:text-red-500 p-2 hover:bg-red-50 rounded transition-colors self-end"><Trash2 size={16}/></button></div>))}</div>
                 </div>
             </div>
           )}
-
         </form>
 
         <div className="p-6 border-t border-slate-200 bg-white flex justify-end gap-3 shadow-lg z-10">

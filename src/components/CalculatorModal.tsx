@@ -1,57 +1,81 @@
-import React, { useState } from 'react';
-import { X, Delete } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { X, Delete, GripHorizontal } from 'lucide-react';
 
-interface CalculatorModalProps { isOpen: boolean; onClose: () => void; }
+export const CalculatorModal = ({ onClose }: { onClose: () => void }) => {
+  const [display, setDisplay] = useState('0');
+  
+  // Estado para arrastrar
+  const [position, setPosition] = useState({ x: window.innerWidth - 320, y: window.innerHeight - 450 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStart = useRef({ x: 0, y: 0 });
 
-export const CalculatorModal: React.FC<CalculatorModalProps> = ({ isOpen, onClose }) => {
-  const [display, setDisplay] = useState('');
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    dragStart.current = { x: e.clientX - position.x, y: e.clientY - position.y };
+  };
 
-  if (!isOpen) return null;
-
-  const handleBtn = (val: string) => setDisplay(prev => prev + val);
-  const handleClear = () => setDisplay('');
-  const handleEval = () => {
-    try {
-      // eslint-disable-next-line no-eval
-      setDisplay(eval(display).toString());
-    } catch {
-      setDisplay('Error');
-      setTimeout(() => setDisplay(''), 1000);
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging) {
+      setPosition({ x: e.clientX - dragStart.current.x, y: e.clientY - dragStart.current.y });
     }
   };
 
-  const btns = ['7','8','9','/','4','5','6','*','1','2','3','-','0','.','=','+'];
+  const handleMouseUp = () => setIsDragging(false);
+
+  const handleBtn = (val: string) => {
+    if (val === 'C') setDisplay('0');
+    else if (val === '=') {
+        try { 
+            // eslint-disable-next-line
+            setDisplay(eval(display).toString()); 
+        } catch { setDisplay('Error'); }
+    } else if (val === 'DEL') {
+        setDisplay(prev => prev.length > 1 ? prev.slice(0, -1) : '0');
+    } else {
+        setDisplay(prev => prev === '0' ? val : prev + val);
+    }
+  };
+
+  const buttons = ['C', '/', '*', 'DEL', '7', '8', '9', '-', '4', '5', '6', '+', '1', '2', '3', '=', '0', '.'];
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-slate-800 p-4 rounded-2xl shadow-2xl w-full max-w-xs animate-in zoom-in-95">
-        <div className="flex justify-between items-center mb-4 text-white">
-          <h3 className="font-bold">Calculadora</h3>
-          <button onClick={onClose}><X size={20}/></button>
+    <div 
+        className="fixed z-[9999] bg-slate-900 p-4 rounded-2xl shadow-2xl w-72 border border-slate-700 select-none"
+        style={{ left: position.x, top: position.y, cursor: isDragging ? 'grabbing' : 'default' }}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+    >
+      <div 
+        className="flex justify-between items-center mb-4 text-white cursor-grab active:cursor-grabbing border-b border-slate-700 pb-2"
+        onMouseDown={handleMouseDown}
+      >
+        <div className="flex items-center gap-2 opacity-70">
+            <GripHorizontal size={18}/>
+            <span className="font-bold text-xs uppercase">Calculadora</span>
         </div>
-        
-        <div className="bg-slate-100 p-4 rounded-xl mb-4 text-right text-3xl font-mono font-bold text-slate-800 h-16 overflow-hidden">
-          {display || '0'}
-        </div>
-
-        <div className="grid grid-cols-4 gap-2">
-          <button onClick={handleClear} className="col-span-3 bg-red-500 hover:bg-red-600 text-white p-3 rounded-lg font-bold">C</button>
-          <button onClick={() => setDisplay(d => d.slice(0, -1))} className="bg-slate-600 hover:bg-slate-500 text-white p-3 rounded-lg flex items-center justify-center"><Delete size={20}/></button>
-          
-          {btns.map(btn => (
-            <button
-              key={btn}
-              onClick={() => btn === '=' ? handleEval() : handleBtn(btn)}
-              className={`p-4 rounded-lg font-bold text-xl transition-all active:scale-95 ${
-                btn === '=' ? 'bg-green-500 text-white hover:bg-green-600' :
-                ['/','*','-','+'].includes(btn) ? 'bg-indigo-500 text-white hover:bg-indigo-600' :
-                'bg-slate-700 text-white hover:bg-slate-600'
-              }`}
+        <button onClick={onClose} className="hover:text-red-400"><X size={18}/></button>
+      </div>
+      
+      <div className="bg-slate-800 p-4 rounded-xl mb-4 text-right text-3xl font-mono text-white truncate h-20 flex items-center justify-end border border-slate-600 shadow-inner">
+        {display}
+      </div>
+      
+      <div className="grid grid-cols-4 gap-3">
+        {buttons.map(btn => (
+            <button 
+                key={btn} 
+                onClick={() => handleBtn(btn)}
+                className={`h-12 rounded-xl font-bold text-lg transition-all active:scale-95 shadow-lg ${
+                    ['=','+','-','*','/'].includes(btn) ? 'bg-blue-600 text-white hover:bg-blue-500' : 
+                    btn === 'C' || btn === 'DEL' ? 'bg-red-600 text-white hover:bg-red-500' :
+                    btn === '0' ? 'bg-slate-700 text-white col-span-2 hover:bg-slate-600' :
+                    'bg-slate-700 text-white hover:bg-slate-600'
+                }`}
             >
-              {btn}
+                {btn === 'DEL' ? <Delete size={20} className="mx-auto"/> : btn}
             </button>
-          ))}
-        </div>
+        ))}
       </div>
     </div>
   );

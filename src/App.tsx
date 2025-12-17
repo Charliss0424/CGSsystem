@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { DatabaseProvider, useDatabase } from './context/DatabaseContext';
 import { Header } from './components/Header';
+
+// Páginas existentes
 import { Dashboard } from './pages/Dashboard';
 import { PosTerminal } from './pages/PosTerminal';
 import { Inventory } from './pages/Inventory';
@@ -11,15 +13,33 @@ import { ClientsDashboard } from './pages/ClientsDashboard';
 import { Orders } from './pages/Orders';
 import { RouteSales } from './pages/RouteSales';
 import { Login } from './pages/Login';
-import { ActivationScreen } from './pages/ActivationScreen'; // <--- IMPORTAMOS
-import { ViewState } from './types';
-import { validateLicense } from './services/licenseService'; // <--- IMPORTAMOS
-import { AccountsReceivable } from './pages/AccountsReceivable'; // Importar nuevo archivo
+import { ActivationScreen } from './pages/ActivationScreen';
+import { AccountsReceivable } from './pages/AccountsReceivable';
+import { PosReturns } from './pages/PosReturns';
+import { ClientsCatalog } from './pages/ClientsCatalog';
+import { TaxSettings } from './pages/TaxSettings';
+import { HardwareSettings } from './pages/HardwareSettings';
+import { UsersSettings } from './pages/UsersSettings';
 
-// Wrapper interno (El sistema real)
+// Módulo de Compras
+import PurchaseOrders from './components/PurchaseOrders';
+import Purchases from "./pages/Purchases"
+import CalendarView from './components/CalendarView';
+
+// Inventarios nuevos
+import InventoryMovements from './pages/InventoryMovements';
+
+// Utilerías y Tipos
+import { ViewState } from './types';
+import { validateLicense } from './services/licenseService';
+
+
+// ==========================
+//   SISTEMA INTERNO
+// ==========================
 const AppContent = () => {
   const { currentUser } = useDatabase();
-  const [currentView, setCurrentView] = useState<ViewState>('DASHBOARD');
+  const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
 
   if (!currentUser) {
     return <Login />;
@@ -27,19 +47,75 @@ const AppContent = () => {
 
   const renderView = () => {
     switch (currentView) {
-      case 'DASHBOARD': return <Dashboard setView={setCurrentView} />;
-      case 'POS': return <PosTerminal setView={setCurrentView} />;
-      case 'INVENTORY': return <Inventory />;
-      case 'SALES': return <SalesHistory />;
-      case 'REPORTS': return <Reports onBack={() => setCurrentView('DASHBOARD')} />;
-      case 'PENDING_SALES': return <PendingSales setView={setCurrentView} />;
-      case 'CLIENTS_DASHBOARD': return <ClientsDashboard setView={setCurrentView} />;
-      case 'ORDERS': return <Orders setView={setCurrentView} />;
-      case 'ROUTE_SALES': return <RouteSales setView={setCurrentView} />;
-      case 'SETTINGS': return <div className="p-8 text-center text-slate-500">Configuración</div>;
-      case 'CLIENTS_DASHBOARD': return <ClientsDashboard setView={setCurrentView} />; // Ahora es el CRM bonito
-      case 'ACCOUNTS_RECEIVABLE': return <AccountsReceivable setView={setCurrentView} />; // Nuevo módulo de cobro
-      default: return <Dashboard setView={setCurrentView} />;
+
+      // --- DASHBOARD ---
+      case ViewState.DASHBOARD:
+        return <Dashboard setView={setCurrentView} />;
+
+      // --- VENTAS ---
+      case ViewState.POS:
+        return <PosTerminal setView={setCurrentView} />;
+      case ViewState.POS_RETURNS:
+        return <PosReturns setView={setCurrentView} />;
+      case ViewState.PENDING_SALES:
+        return <PendingSales setView={setCurrentView} />;
+      case ViewState.ORDERS:
+        return <Orders setView={setCurrentView} />;
+      case ViewState.ROUTE_SALES:
+        return <RouteSales setView={setCurrentView} />;
+      case ViewState.SALES:
+        return <SalesHistory />;
+
+      // --- CLIENTES ---
+      case ViewState.CLIENTS_DASHBOARD:
+        return <ClientsDashboard setView={setCurrentView} />;
+      case ViewState.CLIENTS_CATALOG:
+        return <ClientsCatalog setView={setCurrentView} />;
+
+      // --- INVENTARIOS ---
+      case ViewState.INVENTORY:
+        return <Inventory setView={setCurrentView} />;
+
+      case ViewState.INVENTORY_MOVEMENTS:
+        return <InventoryMovements setView={setCurrentView} />;
+
+      case ViewState.INVENTORY_AUDIT:
+        return (
+          <div className="p-10 text-center text-xl text-slate-600">
+            Auditoría de inventario (pendiente de implementar)
+          </div>
+        );
+
+      // --- CONTABILIDAD ---
+      case ViewState.ACCOUNTS_RECEIVABLE:
+        return <AccountsReceivable setView={setCurrentView} />;
+
+      // --- COMPRAS ---
+      case ViewState.PURCHASE_ORDERS:
+        return <PurchaseOrders setView={setCurrentView} />;
+      case ViewState.PURCHASES:
+        return <Purchases setView={setCurrentView} />;
+      //case ViewState.PURCHASE_HISTORY:
+        return <Purchases setView={setCurrentView} />;
+      case ViewState.CALENDAR:
+        return <CalendarView setView={setCurrentView} />;
+
+      // --- GESTIÓN ---
+      case ViewState.REPORTS:
+        return <Reports onBack={() => setCurrentView(ViewState.DASHBOARD)} />;
+
+      // --- CONFIGURACIÓN ---
+      case ViewState.SETTINGS:
+        return <div className="p-8 text-center text-slate-500">Configuración General</div>;
+      case ViewState.CONF_HARDWARE:
+        return <HardwareSettings setView={setCurrentView} />;
+      case ViewState.CONF_TAXES:
+        return <TaxSettings setView={setCurrentView} />;
+      case ViewState.CONF_USERS:
+        return <UsersSettings setView={setCurrentView} />;
+
+      default:
+        return <Dashboard setView={setCurrentView} />;
     }
   };
 
@@ -53,40 +129,41 @@ const AppContent = () => {
   );
 };
 
-// Componente Principal con Lógica de Seguridad
+
+// ==========================
+//   APP PRINCIPAL
+// ==========================
 function App() {
   const [isLicensed, setIsLicensed] = useState<boolean>(false);
   const [isCheckingLicense, setIsCheckingLicense] = useState<boolean>(true);
 
   useEffect(() => {
     const checkLicense = async () => {
-      // 1. Buscamos si ya hay una licencia guardada en este navegador
       const savedKey = localStorage.getItem('CGSystem_license_key');
 
       if (savedKey) {
-        // 2. Opcional: Validar contra el servidor cada vez que abre la app (Más seguro)
-        // O validar solo si ha pasado X tiempo.
-        // Por ahora, validamos siempre para asegurar el "Machine ID Lock"
-        const result = await validateLicense(savedKey);
-        
-        if (result.isValid) {
-          setIsLicensed(true);
-        } else {
-          // Si la licencia caducó o es otra máquina, la borramos y bloqueamos
-          localStorage.removeItem('CGSystem_license_key');
-          localStorage.removeItem('CGSystem_plan');
+        try {
+          const result = await validateLicense(savedKey);
+
+          if (result.isValid) {
+            setIsLicensed(true);
+          } else {
+            localStorage.removeItem('CGSystem_license_key');
+            localStorage.removeItem('CGSystem_plan');
+            setIsLicensed(false);
+          }
+        } catch (e) {
+          console.error("Error validando licencia", e);
           setIsLicensed(false);
         }
       }
-      
-      // Terminamos de checar
+
       setIsCheckingLicense(false);
     };
 
     checkLicense();
   }, []);
 
-  // Pantalla de carga mientras verifica licencia
   if (isCheckingLicense) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -98,12 +175,10 @@ function App() {
     );
   }
 
-  // Si no tiene licencia válida, mostramos pantalla de activación
   if (!isLicensed) {
     return <ActivationScreen onActivationSuccess={() => setIsLicensed(true)} />;
   }
 
-  // Si tiene licencia, cargamos el sistema normal
   return (
     <DatabaseProvider>
       <AppContent />

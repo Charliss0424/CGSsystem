@@ -15,7 +15,6 @@ import {
   BarChart3, 
   Tag, 
   Store, 
-  Settings, 
   PieChart,
   Wallet,
   Megaphone,
@@ -32,8 +31,10 @@ import {
   Globe,
   Smartphone,
   Wifi,
-  RefreshCw
+  RefreshCw,
+  BoxesIcon
 } from 'lucide-react';
+
 import { ViewState } from '../types';
 
 interface DashboardProps {
@@ -41,7 +42,7 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ setView }) => {
-  
+
   const handleNavigation = (target: ViewState | 'COMING_SOON') => {
     if (target === 'COMING_SOON') {
       alert("Esta funcionalidad estará disponible pronto.");
@@ -52,43 +53,37 @@ export const Dashboard: React.FC<DashboardProps> = ({ setView }) => {
 
   return (
     <div className="p-8 animate-fade-in max-w-[1920px] mx-auto bg-slate-50 min-h-screen">
-      
-      {/* 
-         GRID LAYOUT:
-         md:grid-cols-2 -> Tablet (2 columnas)
-         lg:grid-cols-4 -> Desktop (4 columnas para lograr 4 arriba y 4 abajo)
-      */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        
-        {/* --- FILA SUPERIOR (OPERATIVA) --- */}
 
-        {/* 1. Ventas */}
+      {/* GRID LAYOUT */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+
+        {/* --- VENTAS --- */}
         <MenuSection 
           title="Ventas" 
           gradient="bg-gradient-to-r from-blue-600 to-blue-400"
           items={[
             { label: 'Punto de Venta', icon: ShoppingCart, action: () => handleNavigation('POS') },
-            { label: 'Presupuestos', icon: ClipboardList, action: () => handleNavigation('COMING_SOON') },
+            { label: 'Presupuestos', icon: ClipboardList, action: () => handleNavigation('PENDING_SALES') },
             { label: 'Pedidos', icon: ShoppingBag, action: () => handleNavigation('ORDERS') },
             { label: 'Venta en Ruta', icon: Truck, action: () => handleNavigation('ROUTE_SALES') },
             { label: 'Clientes', icon: Users, action: () => handleNavigation('CLIENTS_DASHBOARD') },
-            { label: 'Historial y devoluciones', icon: RotateCcw, action: () => handleNavigation('SALES') },
+            { label: 'Historial', icon: RotateCcw, action: () => handleNavigation('SALES') },
           ]}
         />
 
-        {/* 2. Compras */}
+        {/* --- COMPRAS --- */}
         <MenuSection 
           title="Compras" 
           gradient="bg-gradient-to-r from-emerald-600 to-emerald-400"
           items={[
-            { label: 'Órdenes de Compra', icon: ClipboardList, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Compras', icon: ShoppingBag, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Proveedores', icon: Users, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Calendario', icon: CalendarDays, action: () => handleNavigation('COMING_SOON') },
+            { label: 'Órdenes de Compra', icon: ClipboardList, action: () => handleNavigation('PURCHASE_ORDERS') },
+            { label: 'Compras', icon: ShoppingBag, action: () => handleNavigation('PURCHASES') },
+            { label: 'Proveedores', icon: Users, action: () => handleNavigation('SUPPLIERS') },
+            { label: 'Calendario', icon: CalendarDays, action: () => handleNavigation('CALENDAR') },
           ]}
         />
 
-        {/* 3. Contabilidad */}
+        {/* --- CONTABILIDAD --- */}
         <MenuSection 
           title="Contabilidad" 
           gradient="bg-gradient-to-r from-purple-600 to-purple-400"
@@ -96,27 +91,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ setView }) => {
             { label: 'Facturas', icon: FileText, action: () => handleNavigation('COMING_SOON') },
             { label: 'Recibos', icon: Receipt, action: () => handleNavigation('COMING_SOON') },
             { label: 'Gastos', icon: Banknote, action: () => handleNavigation('COMING_SOON') },
-            // AQUÍ ESTÁ EL CAMBIO:
             { label: 'Cobranza', icon: Wallet, action: () => handleNavigation('ACCOUNTS_RECEIVABLE') },
           ]}
         />
 
-        {/* 4. Inventarios */}
+        {/* --- INVENTARIOS --- */}
         <MenuSection 
           title="Inventarios" 
           gradient="bg-gradient-to-r from-amber-600 to-amber-400"
           items={[
-            { label: 'Catálogo Productos', icon: Package, action: () => handleNavigation('INVENTORY') },
-            { label: 'Entradas/Salidas', icon: ArrowRightLeft, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Auditoría', icon: BarChart3, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Etiquetas', icon: Tag, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Sucursales', icon: Store, action: () => handleNavigation('COMING_SOON') },
+            { label: 'Catálogo Productos', icon: Package, action: () => handleNavigation(ViewState.INVENTORY) },
+
+            // Movimientos combinados (si lo usas)
+            { label: 'Movimientos', icon: ArrowRightLeft, action: () => handleNavigation(ViewState.INVENTORY_MOVEMENTS) },
+
+            { label: 'Auditoría', icon: BarChart3, action: () => handleNavigation(ViewState.INVENTORY_AUDIT) },
+            { label: 'Etiquetas', icon: Tag, action: () => handleNavigation(ViewState.INVENTORY_LABELS) },
+            { label: 'Sucursales', icon: Store, action: () => handleNavigation(ViewState.INVENTORY_BRANCHES) },
+
+            // Nuevos iconos de tu captura
+            { label: 'Stock Mínimo', icon: BoxesIcon, action: () => handleNavigation(ViewState.INVENTORY_MIN_STOCK) },
           ]}
-        />
+/>
 
-        {/* --- FILA INFERIOR (ESTRATÉGICA Y SOPORTE) --- */}
-
-        {/* 5. Marketing y Lealtad */}
+        {/* --- MARKETING --- */}
         <MenuSection 
           title="Marketing y Lealtad" 
           gradient="bg-gradient-to-r from-pink-600 to-pink-400"
@@ -128,7 +126,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setView }) => {
           ]}
         />
 
-        {/* 6. Gestión del Negocio (RRHH) */}
+        {/* --- GESTIÓN --- */}
         <MenuSection 
           title="Gestión del Negocio" 
           gradient="bg-gradient-to-r from-cyan-600 to-cyan-400"
@@ -141,7 +139,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setView }) => {
           ]}
         />
 
-        {/* 7. Tienda Online (NUEVO) */}
+        {/* --- TIENDA ONLINE --- */}
         <MenuSection 
           title="Tienda Online" 
           gradient="bg-gradient-to-r from-indigo-600 to-indigo-400"
@@ -153,15 +151,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ setView }) => {
           ]}
         />
 
-        {/* 8. Configuración Sistema */}
+        {/* --- CONFIGURACIÓN --- */}
         <MenuSection 
           title="Configuración Sistema" 
           gradient="bg-gradient-to-r from-slate-700 to-slate-500"
           items={[
-            { label: 'Hardware / Imp.', icon: Printer, action: () => handleNavigation('SETTINGS') },
-            { label: 'Impuestos', icon: FileSpreadsheet, action: () => handleNavigation('SETTINGS') },
-            { label: 'Base de Datos', icon: Database, action: () => handleNavigation('SETTINGS') },
-            { label: 'Usuarios Sistema', icon: UserCog, action: () => handleNavigation('SETTINGS') },
+            { label: 'Hardware / Imp.', icon: Printer, action: () => setView('CONF_HARDWARE') },
+            { label: 'Impuestos', icon: FileSpreadsheet, action: () => setView('CONF_TAXES') },
+            { label: 'Base de Datos', icon: Database, action: () => setView('CONF_DATABASE') },
+            { label: 'Usuarios Sistema', icon: UserCog, action: () => setView('CONF_USERS') },
           ]}
         />
 
@@ -179,13 +177,12 @@ interface MenuItem {
 const MenuSection = ({ title, gradient, items }: { title: string, gradient: string, items: MenuItem[] }) => (
   <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full hover:shadow-xl transition-all duration-300 hover:-translate-y-1 group">
     <div className={`${gradient} px-6 py-4 border-b border-white/10 relative overflow-hidden`}>
-      {/* Efecto de brillo en el header */}
       <div className="absolute top-0 right-0 w-24 h-24 bg-white opacity-10 rounded-full blur-2xl transform translate-x-10 -translate-y-10 group-hover:translate-x-5 transition-transform"></div>
-      
       <h3 className="text-white font-bold text-lg tracking-wide flex items-center gap-2 relative z-10">
         {title}
       </h3>
     </div>
+
     <div className="p-6 grid grid-cols-2 gap-y-6 gap-x-4 flex-1 content-start bg-gradient-to-b from-white to-slate-50">
       {items.map((item, idx) => {
         const Icon = item.icon;
@@ -202,7 +199,7 @@ const MenuSection = ({ title, gradient, items }: { title: string, gradient: stri
               {item.label}
             </span>
           </button>
-        )
+        );
       })}
     </div>
   </div>

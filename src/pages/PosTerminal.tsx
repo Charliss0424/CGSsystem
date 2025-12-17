@@ -1,30 +1,26 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Search, Trash2, Plus, Minus, CreditCard, 
-  Banknote, RotateCcw, Save, Truck, PackageX,
-  AlertCircle, Zap, Scale, Box, Tag, Info, Printer, MoreHorizontal, Lock, Layers, User, UserCheck, Wallet
+  Banknote, Wallet, PackageX, Box, Tag, Scale, 
+  MoreHorizontal, User, Printer, Lock, AlertCircle, Zap, Layers, Clock
 } from 'lucide-react';
 import { useDatabase } from '../context/DatabaseContext';
-import { Product, CartItem, ViewState, Client } from '../types';
-
-// --- COMPONENTES ---
+import { Product, CartItem, ViewState } from '../types';
 import { PaymentModal } from '../components/PaymentModal'; 
 import { TicketTemplate } from '../components/TicketTemplate';
-import { ShiftReportTicket } from '../components/ShiftReportTicket';
 import { printElement } from '../utils/printHelper';
 import { QuantityModal } from '../components/QuantityModal';
-import { CalculatorModal } from '../components/CalculatorModal';
-import { CashFlowModal } from '../components/CashFlowModal';
 import { KeyboardShortcutsBar } from '../components/KeyboardShortcutsBar';
-import { AdminAuthModal } from '../components/AdminAuthModal';
+import { CreditSaleModal } from '../components/CreditSaleModal';
 import { ClientSearchModal } from '../components/ClientSearchModal';
+import { AdminAuthModal } from '../components/AdminAuthModal';
 
 interface PosTerminalProps {
   setView: (view: ViewState) => void;
 }
 
 export const PosTerminal: React.FC<PosTerminalProps> = ({ setView }) => {
-  const { products, processSale, pendingSaleToLoad, setSaleToLoad, parkSale, generateShiftReport } = useDatabase();
+  const { products, processSale, pendingSaleToLoad, setSaleToLoad, parkSale } = useDatabase();
   
   // --- ESTADOS ---
   const [cart, setCart] = useState<CartItem[]>(() => {
@@ -33,33 +29,33 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({ setView }) => {
   });
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('TODOS');
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  
+  const [selectedClient, setSelectedClient] = useState<any>(null);
+
   // --- MODALES ---
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'credit'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>('cash');
   const [qtyModalOpen, setQtyModalOpen] = useState(false);
   const [selectedProductForQty, setSelectedProductForQty] = useState<Product | null>(null);
-  const [clientModalOpen, setClientModalOpen] = useState(false);
+  const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
+  const [isClientSearchOpen, setIsClientSearchOpen] = useState(false);
   
-  // Utilidades y Seguridad
-  const [calcOpen, setCalcOpen] = useState(false);
-  const [cashFlowOpen, setCashFlowOpen] = useState(false);
-  const [cashFlowType, setCashFlowType] = useState<'IN'|'OUT'>('IN');
-  const [authOpen, setAuthOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState<() => void>(() => {});
-  const [authActionTitle, setAuthActionTitle] = useState('');
+  // --- SEGURIDAD ---
+  const [showAuth, setShowAuth] = useState(false);
+  const [authAction, setAuthAction] = useState<'DELETE_ITEM' | 'CLEAR_CART' | null>(null);
+  const [itemToDeleteIndex, setItemToDeleteIndex] = useState<number | null>(null);
 
-  // UI
-  const [lastChange, setLastChange] = useState<number | null>(null);
+  // --- UI ---
   const [showSuccess, setShowSuccess] = useState(false);
+  const [lastChange, setLastChange] = useState<number | null>(null);
   const [restoredSession, setRestoredSession] = useState(false);
-  const [lastTicketData, setLastTicketData] = useState<any>(null);
-  
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const endOfListRef = useRef<HTMLDivElement>(null);
 
   // --- EFECTOS ---
-  useEffect(() => { localStorage.setItem('pos_autosave_cart', JSON.stringify(cart)); }, [cart]);
+  useEffect(() => { 
+      localStorage.setItem('pos_autosave_cart', JSON.stringify(cart));
+      endOfListRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [cart]);
   
   useEffect(() => { 
     if (cart.length > 0 && !pendingSaleToLoad) { 
@@ -76,96 +72,58 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({ setView }) => {
   }, [pendingSaleToLoad, setSaleToLoad]);
 
   // --- ATAJOS ---
-  const handleShortcut = (key: string) => {
-    switch(key) {
-        case 'F2': setView('PENDING_SALES'); break;
-        case 'F3': setView('SALES'); break;
-        case 'F4': handleReprintTicket(); break;
-        case 'F5': setCalcOpen(true); break;
-        case 'F6': setCashFlowType('IN'); setCashFlowOpen(true); break;
-        case 'F7': setCashFlowType('OUT'); setCashFlowOpen(true); break;
-        case 'F8': handlePrintReport('X'); break;
-        case 'F9': setAuthActionTitle('Corte Z'); setPendingAction(() => () => handlePrintReport('Z')); setAuthOpen(true); break;
-        case 'F10': handleParkSale(); break;
-        case 'F11': if (cart.length > 0) initiatePayment('cash'); break;
-        case 'F12': if (cart.length > 0) initiatePayment('card'); break;
-        case 'Escape':
-            if (isPaymentOpen) setIsPaymentOpen(false);
-            else if (qtyModalOpen) setQtyModalOpen(false);
-            else if (clientModalOpen) setClientModalOpen(false);
-            else if (calcOpen) setCalcOpen(false);
-            else if (cashFlowOpen) setCashFlowOpen(false);
-            else if (authOpen) setAuthOpen(false);
-            else if (cart.length > 0) handleClearCartProtected();
-            break;
-    }
-  };
-
   useEffect(() => {
     const handleKeyDownGlobal = (e: KeyboardEvent) => {
-        if (e.key.startsWith('F') || e.key === 'Escape') {
-            e.preventDefault();
-            handleShortcut(e.key);
+        if (isPaymentOpen || isCreditModalOpen || qtyModalOpen || showAuth) return;
+        switch(e.key) {
+            case 'F10': e.preventDefault(); if(cart.length > 0) initiatePayment('cash'); break;
+            case 'F11': e.preventDefault(); if(cart.length > 0) initiatePayment('card'); break;
+            case 'F12': e.preventDefault(); if(cart.length > 0) initiateCredit(); break;
         }
     };
     window.addEventListener('keydown', handleKeyDownGlobal);
     return () => window.removeEventListener('keydown', handleKeyDownGlobal);
-  }, [cart, isPaymentOpen, qtyModalOpen, clientModalOpen, calcOpen, cashFlowOpen, authOpen]);
+  }, [cart, isPaymentOpen, isCreditModalOpen, qtyModalOpen, showAuth]);
 
-  // --- REPORTES ---
-  const handlePrintReport = async (type: 'X' | 'Z') => {
-    try {
-        const reportData = await generateShiftReport();
-        const ReportComponent = <ShiftReportTicket type={type} generatedAt={reportData.generatedAt} cashSales={reportData.cashSales} cardSales={reportData.cardSales} cashIn={reportData.cashIn} cashOut={reportData.cashOut} totalSales={reportData.totalSales} finalCashExpected={reportData.expectedCashInDrawer} user="Admin" />;
-        printElement(ReportComponent);
-        if (type === 'Z') alert("Corte Z generado.");
-    } catch (e) { alert("Error generando reporte"); }
-  };
 
-  // --- LÓGICA DE AGREGAR ---
+  // --- LÓGICA AGREGAR ---
   const handleProductClick = (product: Product) => {
     const hasPresentations = product.presentations && product.presentations.length > 0;
     const hasLegacyPack = product.packPrice && product.packQuantity;
-    const hasFractional = product.contentPerUnit && product.contentUnitPrice;
-
-    if (product.isWeighable || hasLegacyPack || hasPresentations || hasFractional) {
+    if (product.isWeighable || hasLegacyPack || hasPresentations) {
       setSelectedProductForQty(product);
       setQtyModalOpen(true);
     } else {
-      addToCart(product, 1, null, false, false);
+      addToCart(product, 1, null, false);
     }
   };
 
   const handleOptionsClick = (e: React.MouseEvent, product: Product) => {
-    e.stopPropagation();
+    e.stopPropagation(); 
     setSelectedProductForQty(product);
     setQtyModalOpen(true);
   };
 
-  const addToCart = (product: Product, qty: number, presentation: any | null, isLegacyPack: boolean = false, isFractional: boolean = false) => {
+  const addToCart = (product: Product, qty: number, presentation: any | null, isLegacyPack: boolean = false) => {
     setCart(prev => {
-      const variantId = isFractional ? 'fractional' : (presentation ? presentation.id : (isLegacyPack ? 'legacy_pack' : 'unit'));
+      const variantId = presentation ? presentation.id : (isLegacyPack ? 'legacy_pack' : 'unit');
       const existingIdx = prev.findIndex(item => {
-        const itemVariantId = item.isFractionalSale ? 'fractional' : (item.selectedPresentation ? item.selectedPresentation.id : (item.isPackSale ? 'legacy_pack' : 'unit'));
+        const itemVariantId = item.selectedPresentation ? item.selectedPresentation.id : (item.isPackSale ? 'legacy_pack' : 'unit');
         return item.id === product.id && itemVariantId === variantId;
       });
 
       let finalPrice = product.price;
       let finalName = product.name;
-      let stockFactor = 1;
+      let packContent = 1;
 
-      if (isFractional) {
-          finalPrice = product.contentUnitPrice || 0;
-          finalName = `SUELTO: ${product.name}`;
-          stockFactor = 1 / (product.contentPerUnit || 1);
-      } else if (presentation) {
-          finalPrice = presentation.price;
-          finalName = `${product.name} (${presentation.name})`;
-          stockFactor = presentation.quantity;
+      if (presentation) {
+        finalPrice = presentation.price;
+        finalName = `${product.name} (${presentation.name})`;
+        packContent = presentation.quantity;
       } else if (isLegacyPack) {
-          finalPrice = product.packPrice || 0;
-          finalName = `CAJA: ${product.name}`;
-          stockFactor = product.packQuantity || 1;
+        finalPrice = product.packPrice || 0;
+        finalName = `CAJA: ${product.name}`;
+        packContent = product.packQuantity || 1;
       }
 
       if (existingIdx >= 0) {
@@ -173,62 +131,65 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({ setView }) => {
       } 
       
       return [...prev, {
-        ...product, name: finalName, price: finalPrice, quantity: qty,
-        isPackSale: isLegacyPack, isFractionalSale: isFractional, selectedPresentation: presentation || undefined,
-        packQuantity: stockFactor, groupId: (isLegacyPack || presentation || isFractional) ? undefined : product.groupId
+        ...product, name: finalName, price: finalPrice, quantity: qty, isPackSale: isLegacyPack,
+        selectedPresentation: presentation || undefined, packQuantity: packContent, 
+        groupId: (isLegacyPack || presentation) ? undefined : product.groupId
       }];
     });
     setSearchTerm('');
     setTimeout(() => searchInputRef.current?.focus(), 10);
   };
 
-  // --- GESTIÓN DE CANTIDADES ---
+  // --- SEGURIDAD ---
+  const requestRemoveItem = (index: number) => {
+    setItemToDeleteIndex(index);
+    setAuthAction('DELETE_ITEM');
+    setShowAuth(true);
+  };
+  const requestClearCart = () => {
+    setAuthAction('CLEAR_CART');
+    setShowAuth(true);
+  };
+  const handleAuthSuccess = () => {
+    setShowAuth(false);
+    if (authAction === 'DELETE_ITEM' && itemToDeleteIndex !== null) {
+        setCart(prev => prev.filter((_, i) => i !== itemToDeleteIndex));
+        setItemToDeleteIndex(null);
+    } else if (authAction === 'CLEAR_CART') {
+        setCart([]);
+        localStorage.removeItem('pos_autosave_cart');
+        setSelectedClient(null);
+    }
+    setAuthAction(null);
+  };
+
   const updateQuantity = (index: number, delta: number) => {
     setCart(prev => {
       const newQty = prev[index].quantity + delta;
       if (newQty <= 0) {
-         setAuthActionTitle(`Eliminar item`);
-         setPendingAction(() => () => setCart(p => p.filter((_, i) => i !== index)));
-         setAuthOpen(true);
-         return prev;
+          setTimeout(() => requestRemoveItem(index), 0);
+          return prev;
       }
       return prev.map((item, i) => i === index ? { ...item, quantity: newQty } : item);
     });
-  };
-
-  const handleRemoveItemProtected = (index: number) => {
-    setAuthActionTitle(`Eliminar item`);
-    setPendingAction(() => () => setCart(prev => prev.filter((_, i) => i !== index)));
-    setAuthOpen(true);
-  };
-
-  const handleClearCartProtected = () => {
-    if (cart.length === 0) return;
-    setAuthActionTitle('Cancelar Venta');
-    setPendingAction(() => () => { setCart([]); setSelectedClient(null); localStorage.removeItem('pos_autosave_cart'); });
-    setAuthOpen(true);
   };
 
   // --- CÁLCULOS ---
   const calculateTotals = (items: CartItem[]) => {
     const groupCounts: Record<string, number> = {};
     const groupInfo: Record<string, any> = {};
-    
     items.forEach(item => {
-        if (item.groupId && !item.isPackSale && !item.selectedPresentation && !item.isFractionalSale) {
+        if (item.groupId && !item.isPackSale && !item.selectedPresentation) {
             groupCounts[item.groupId] = (groupCounts[item.groupId] || 0) + item.quantity;
-            if (item.wholesalePrice && item.wholesaleMin) {
-                groupInfo[item.groupId] = { regular: item.price, wholesale: item.wholesalePrice, min: item.wholesaleMin };
-            }
+            if (item.wholesalePrice && item.wholesaleMin) groupInfo[item.groupId] = { regular: item.price, wholesale: item.wholesalePrice, min: item.wholesaleMin };
         }
     });
 
-    let subtotal = 0;
-    let savings = 0; 
+    let subtotal = 0; let savings = 0; 
     const itemsWithPrice = items.map(item => {
         let finalPrice = item.price;
         let isWholesaleApplied = false;
-        if (item.groupId && !item.isPackSale && !item.selectedPresentation && !item.isFractionalSale && item.wholesaleMin && item.wholesalePrice) {
+        if (item.groupId && !item.isPackSale && !item.selectedPresentation && item.wholesaleMin && item.wholesalePrice) {
             if (groupCounts[item.groupId] >= item.wholesaleMin) {
                 finalPrice = item.wholesalePrice;
                 isWholesaleApplied = true;
@@ -244,97 +205,85 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({ setView }) => {
         const count = groupCounts[groupId];
         const info = groupInfo[groupId];
         if (info && count < info.min) {
-            promoOpportunities.push({ groupId, missing: info.min - count, newPrice: info.wholesale, savingPerUnit: info.regular - info.wholesale });
+            promoOpportunities.push({ groupId, missing: info.min - count, newPrice: info.wholesale });
         }
     });
 
-    const tax = subtotal * 0.16;
-    return { subtotal, tax, total: subtotal + tax, savings, itemsWithPrice, promoOpportunities };
+    const tax = subtotal * 0.16; 
+    const total = subtotal + tax; 
+    return { subtotal, tax, total, savings, itemsWithPrice, promoOpportunities };
   };
 
-  const { subtotal, tax, total, savings, itemsWithPrice, promoOpportunities } = calculateTotals(cart);
+  const { subtotal, total, savings, itemsWithPrice, promoOpportunities } = calculateTotals(cart);
 
-  // --- BUSCADOR ---
+  // --- ESCÁNER ---
   const handleScanOrSearch = () => {
     const term = searchTerm.trim();
     if (!term) return;
     let found = products.find(p => p.barcode === term || p.sku === term || p.shortCode === term);
     if (found) { handleProductClick(found); setSearchTerm(''); return; }
     const legacyPackFound = products.find(p => p.packBarcode === term);
-    if (legacyPackFound) { addToCart(legacyPackFound, 1, null, true, false); setSearchTerm(''); return; }
+    if (legacyPackFound) { addToCart(legacyPackFound, 1, null, true); setSearchTerm(''); return; }
     for (const prod of products) {
-        const presFound = prod.presentations?.find(p => p.barcode === term);
-        if (presFound) { addToCart(prod, 1, presFound, false, false); setSearchTerm(''); return; }
+        if (prod.presentations?.find(p => p.barcode === term)) {
+            addToCart(prod, 1, prod.presentations.find(p => p.barcode === term), false);
+            setSearchTerm(''); return;
+        }
     }
   };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); handleScanOrSearch(); } };
 
   const filteredProducts = (products || []).filter((p: Product) => {
     const term = searchTerm.toLowerCase();
     const matchesSearch = p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term) || (p.barcode && p.barcode.includes(term));
-    const matchesCategory = selectedCategory === 'TODOS' || p.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    return (matchesSearch && (selectedCategory === 'TODOS' || p.category === selectedCategory));
   });
 
   // --- COBRO ---
-  const initiatePayment = (method: 'cash' | 'card' | 'credit') => { 
-      if (method === 'credit' && !selectedClient) {
-          alert("Debes seleccionar un cliente para venta a crédito.");
-          setClientModalOpen(true);
-          return;
-      }
-      setPaymentMethod(method); 
-      setIsPaymentOpen(true); 
-  };
+  const initiatePayment = (method: 'cash' | 'card') => { setPaymentMethod(method); setIsPaymentOpen(true); };
   
   const handleFinishSale = async (amountTendered?: number, change?: number, refCode?: string) => {
-    const clientName = selectedClient ? selectedClient.name : 'Cliente Mostrador';
-    const TicketComponent = <TicketTemplate cart={itemsWithPrice} total={total} savings={savings} subtotal={subtotal} amountTendered={amountTendered || total} change={change || 0} ticketId={`V-${Date.now().toString().slice(-6)}`} customerName={clientName} />;
-    setLastTicketData(TicketComponent);
-    await processSale(cart, total, paymentMethod, clientName, { amountTendered, change, cardAuthCode: refCode, clientId: selectedClient?.id });
-    setIsPaymentOpen(false); setLastChange(change || 0); setShowSuccess(true); 
-    printElement(TicketComponent); 
-    setCart([]); setSelectedClient(null); localStorage.removeItem('pos_autosave_cart'); 
-    setTimeout(() => { setShowSuccess(false); setLastChange(null); }, 3000);
+    const TicketComponent = <TicketTemplate cart={itemsWithPrice} total={total} savings={savings} subtotal={subtotal} amountTendered={amountTendered || total} change={change || 0} ticketId={`V-${Date.now().toString().slice(-6)}`} customerName={selectedClient?.name || "Cliente Mostrador"} />;
+    await processSale(cart, total, paymentMethod, selectedClient?.name || 'Cliente Mostrador', { amountTendered, change, cardAuthCode: refCode });
+    setIsPaymentOpen(false); setLastChange(change || 0); setShowSuccess(true); printElement(TicketComponent); setCart([]); setSelectedClient(null); localStorage.removeItem('pos_autosave_cart'); setTimeout(() => { setShowSuccess(false); setLastChange(null); }, 3000);
   };
-  const handleReprintTicket = () => { if (lastTicketData) printElement(lastTicketData); else alert("No hay ticket reciente."); };
-  const handleParkSale = async () => { if (cart.length === 0) return; await parkSale(cart, total, selectedClient?.name); alert("Guardado en Pendientes"); setCart([]); setSelectedClient(null); localStorage.removeItem('pos_autosave_cart'); };
-
+  const initiateCredit = () => { if (!selectedClient) { setIsClientSearchOpen(true); } else { setIsCreditModalOpen(true); } };
+  const handleFinishCreditSale = async () => {
+    if (!selectedClient) return;
+    await processSale(cart, total, 'credit', selectedClient.name, { amountTendered: 0, change: 0, cardAuthCode: '' });
+    setIsCreditModalOpen(false); setShowSuccess(true);
+    const TicketComponent = <TicketTemplate cart={itemsWithPrice} total={total} savings={savings} subtotal={subtotal} amountTendered={0} change={0} ticketId={`CRED-${Date.now().toString().slice(-6)}`} customerName={selectedClient.name} />;
+    printElement(TicketComponent);
+    setCart([]); setSelectedClient(null); localStorage.removeItem('pos_autosave_cart'); setTimeout(() => setShowSuccess(false), 3000);
+  };
+  const handleParkSale = async () => {
+    if (cart.length === 0) return;
+    if (selectedClient) {
+        if (confirm(`¿Guardar venta para EVENTO de ${selectedClient.name}?`)) {
+            await parkSale(cart, total, selectedClient.name, 'CONSIGNMENT', 'Venta a Consumo');
+            alert("Guardado en Eventos"); setCart([]); localStorage.removeItem('pos_autosave_cart'); return;
+        }
+    }
+    const name = selectedClient ? selectedClient.name : prompt("Nombre para identificar venta:");
+    if (name) { await parkSale(cart, total, name, 'GENERAL'); alert("Venta Pausada"); setCart([]); localStorage.removeItem('pos_autosave_cart'); }
+  };
 
   return (
-    <div className="flex flex-col h-full bg-slate-100">
+    // CONTENEDOR FLEX VERTICAL: Ocupa el 100% de la altura disponible (h-[calc(100vh-65px)]) asumiendo header ~65px
+    // Si el header es más alto, ajusta el 65px. Esto asegura que la barra gris quede abajo.
+    <div className="flex flex-col h-[calc(100vh-65px)] bg-slate-100 overflow-hidden">
       
-      <div className="flex-1 flex overflow-hidden p-4 gap-4 relative">
-        {/* Modales */}
-        <CalculatorModal isOpen={calcOpen} onClose={() => setCalcOpen(false)} />
-        <CashFlowModal isOpen={cashFlowOpen} onClose={() => setCashFlowOpen(false)} type={cashFlowType} />
-        <AdminAuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} onSuccess={pendingAction} actionTitle={authActionTitle}/>
-        <ClientSearchModal isOpen={clientModalOpen} onClose={() => setClientModalOpen(false)} onSelectClient={(client) => { setSelectedClient(client); setClientModalOpen(false); }} />
-
-        {selectedProductForQty && (
-            <QuantityModal 
-                isOpen={qtyModalOpen} onClose={() => setQtyModalOpen(false)} product={selectedProductForQty}
-                onConfirm={(qty, presentation, isFractional) => {
-                    if (isFractional) addToCart(selectedProductForQty, qty, null, false, true);
-                    else if (typeof presentation === 'object') addToCart(selectedProductForQty, qty, presentation, false);
-                    else addToCart(selectedProductForQty, qty, null, !!presentation, false);
-                }}
-            />
-        )}
-        <PaymentModal isOpen={isPaymentOpen} onClose={() => setIsPaymentOpen(false)} onConfirm={handleFinishSale} total={total} method={paymentMethod} client={selectedClient} />
+      {/* ZONA SUPERIOR: PRODUCTOS Y TICKET (Flexible) */}
+      <div className="flex-1 flex p-2 gap-2 overflow-hidden relative z-0">
         
-        {showSuccess && (<div className="absolute inset-0 z-40 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center"><div className="bg-white p-8 rounded-3xl shadow-2xl text-center border-4 border-green-100"><div className="text-green-500 mb-4"><Banknote size={48} className="mx-auto"/></div><h2 className="text-3xl font-bold text-slate-800">¡Venta Exitosa!</h2><p className="text-slate-500 mt-2">Imprimiendo ticket...</p></div></div>)}
-        {restoredSession && (<div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 bg-orange-100 border border-orange-300 text-orange-800 px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-in slide-in-from-top-4 fade-in"><AlertCircle size={18} /><span className="text-sm font-medium">Sesión restaurada</span></div>)}
-
         {/* IZQUIERDA: CATÁLOGO */}
-        <div className="flex-1 flex flex-col gap-4 min-w-0">
-            <div className="bg-white p-4 rounded-xl shadow-sm flex gap-4 items-center shrink-0">
+        <div className="flex-1 flex flex-col gap-2 overflow-hidden">
+            {/* Buscador */}
+            <div className="bg-white p-3 rounded-xl shadow-sm flex gap-2 items-center shrink-0">
                 <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                    <input ref={searchInputRef} type="text" placeholder="Buscar, escanear, PLU..." className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} onKeyDown={handleKeyDown} autoFocus />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input ref={searchInputRef} type="text" placeholder="Buscar, escanear, PLU..." className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleScanOrSearch()} autoFocus />
                 </div>
-                <select className="p-3 bg-slate-50 border border-slate-200 rounded-lg outline-none" value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)}>
+                <select className="p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none text-sm" value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)}>
                     <option value="TODOS">Todas</option>
                     <option value="Abarrotes">Abarrotes</option>
                     <option value="Electrónica">Electrónica</option>
@@ -342,40 +291,19 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({ setView }) => {
                 </select>
             </div>
 
-            <div className="flex-1 overflow-y-auto pr-2">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-2">
+            {/* Grid Productos */}
+            <div className="flex-1 overflow-y-auto pr-1">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
                     {filteredProducts.map((product) => (
-                    <button key={product.id} onClick={() => handleProductClick(product)} className="bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition-all flex flex-col items-start text-left group border border-transparent hover:border-indigo-500 relative">
-                        {(product.packPrice || (product.presentations && product.presentations.length > 0) || (product.contentPerUnit && product.contentUnitPrice)) && (
-                            <div onClick={(e) => handleOptionsClick(e, product)} className="absolute top-2 right-2 z-10 bg-slate-100 hover:bg-indigo-100 text-slate-500 hover:text-indigo-600 p-1.5 rounded-lg transition-colors cursor-pointer"><MoreHorizontal size={16} /></div>
-                        )}
-                        {!product.packPrice && product.wholesalePrice && (<div className="absolute top-2 right-2 pointer-events-none bg-green-100 text-green-700 text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1"><Tag size={10} /> Oferta</div>)}
-
-                        <div className="w-full h-20 bg-slate-50 rounded-lg mb-2 flex items-center justify-center text-slate-400 font-bold text-2xl pointer-events-none">
-                            {product.isWeighable ? <Scale size={32} className="text-orange-300"/> : 
-                            product.image ? <img src={product.image} className="w-full h-full object-cover rounded-lg"/> : product.name.charAt(0)}
+                    <button key={product.id} onClick={() => handleProductClick(product)} className="bg-white p-2 rounded-xl shadow-sm hover:shadow-md transition-all flex flex-col items-start text-left group border border-transparent hover:border-indigo-500 relative">
+                        {(product.packPrice || (product.presentations && product.presentations.length > 0)) && (<div onClick={(e) => handleOptionsClick(e, product)} className="absolute top-1 right-1 z-10 bg-slate-100 hover:bg-indigo-100 text-slate-500 hover:text-indigo-600 p-1 rounded-lg cursor-pointer"><MoreHorizontal size={14} /></div>)}
+                        {(product.wholesalePrice && !product.packPrice) && (<div className="absolute top-1 right-1 pointer-events-none bg-green-100 text-green-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1"><Tag size={8} /> Oferta</div>)}
+                        <div className="w-full h-16 bg-slate-50 rounded-lg mb-1 flex items-center justify-center text-slate-400 font-bold text-xl pointer-events-none">
+                            {product.isWeighable ? <Scale size={24} className="text-orange-300"/> : product.image ? <img src={product.image} className="w-full h-full object-cover rounded-lg"/> : product.name.charAt(0)}
                         </div>
-                        <h3 className="font-bold text-slate-700 line-clamp-2 text-sm h-10 w-full pointer-events-none">{product.name}</h3>
-                        
-                        {/* FRANJA DE MAYOREO CORREGIDA */}
-                        {product.wholesalePrice && product.wholesaleMin ? (
-                            <div className="w-full mt-1 mb-2 bg-indigo-50 border border-indigo-100 rounded px-2 py-1 text-[10px] text-indigo-700 flex justify-between items-center pointer-events-none">
-                                <span className="font-bold">Mayoreo: ${product.wholesalePrice}</span>
-                                <span>A partir de: {product.wholesaleMin}</span>
-                            </div>
-                        ) : <div className="w-full mt-1 mb-2 h-[26px]"></div>}
-
-                        <div className="w-full text-xs text-slate-400 mb-1 flex items-center gap-1 h-4">
-                            {product.packQuantity ? <div className="flex gap-1 items-center"><Box size={10} /><span>Caja x{product.packQuantity}</span></div> : 
-                            product.presentations?.length ? <div className="flex gap-1 items-center"><Layers size={10} /><span>{product.presentations.length} Vars</span></div> : null}
-                        </div>
-
-                        <div className="w-full flex justify-between items-center mt-auto border-t border-slate-100 pt-2 pointer-events-none">
-                            <span className="font-bold text-lg text-indigo-600">${product.price.toFixed(2)}</span>
-                            <span className={`text-[10px] px-2 py-1 rounded-full font-medium ${product.stock > 5 ? 'bg-slate-100 text-slate-600' : 'bg-red-100 text-red-700'}`}>
-                                Stock: {product.stock} {product.isWeighable ? 'kg' : 'pz'}
-                            </span>
-                        </div>
+                        <h3 className="font-bold text-slate-700 line-clamp-2 text-xs h-8 w-full pointer-events-none leading-tight">{product.name}</h3>
+                        {product.wholesalePrice && product.wholesaleMin ? (<div className="w-full mt-1 mb-1 bg-indigo-50 border border-indigo-100 rounded px-1 py-0.5 text-[9px] text-indigo-700 flex justify-between items-center pointer-events-none"><span className="font-bold">May: ${product.wholesalePrice}</span><span>Min: {product.wholesaleMin}</span></div>) : (<div className="w-full mt-1 mb-1 h-[20px]"></div>)}
+                        <div className="w-full flex justify-between items-center mt-auto border-t border-slate-100 pt-1 pointer-events-none"><span className="font-bold text-sm text-indigo-600">${product.price.toFixed(2)}</span><span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${product.stock > 5 ? 'bg-slate-100 text-slate-600' : 'bg-red-100 text-red-700'}`}>{product.stock} {product.isWeighable ? 'kg' : ''}</span></div>
                     </button>
                     ))}
                 </div>
@@ -383,78 +311,91 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({ setView }) => {
         </div>
 
         {/* DERECHA: TICKET */}
-        <div className="w-96 bg-white rounded-xl shadow-lg flex flex-col border border-slate-200 h-full shrink-0">
-            <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-xl">
-                <h2 className="font-bold text-slate-700 flex items-center gap-2">Ticket Actual {selectedClient && <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-1 rounded-full">{selectedClient.name}</span>}</h2>
-                <div className="flex gap-2">
-                    <button onClick={() => setClientModalOpen(true)} title="Asignar Cliente" className={`transition-colors ${selectedClient ? 'text-indigo-600' : 'text-slate-400 hover:text-blue-500'}`}><UserCheck size={18}/></button>
-                    <button onClick={handleReprintTicket} title="Reimprimir" className="text-slate-400 hover:text-blue-500 transition-colors"><Printer size={18}/></button>
-                    <button onClick={handleClearCartProtected} title="Cancelar" className="text-slate-400 hover:text-red-500 transition-colors"><Trash2 size={18}/></button>
+        <div className="w-[420px] bg-white rounded-xl shadow-2xl flex flex-col border-l border-slate-200 h-full shrink-0 z-10 overflow-hidden">
+            <div className="p-3 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
+                <div>
+                    <h2 className="font-bold text-lg text-slate-800">Ticket de Venta</h2>
+                    <div className="flex items-center gap-1 mt-1">
+                        <button onClick={() => setIsClientSearchOpen(true)} className={`text-xs font-bold px-2 py-1 rounded border flex items-center gap-1 transition-colors ${selectedClient ? 'bg-blue-100 text-blue-700 border-blue-200' : 'text-slate-400 border-slate-200 hover:border-blue-400 hover:text-blue-500'}`}>
+                            <User size={14}/> {selectedClient ? selectedClient.name : 'Cliente General'}
+                        </button>
+                        <button className="text-slate-400 hover:text-indigo-500 p-1" title="Reimprimir Último"><Printer size={16}/></button>
+                        <button onClick={handleParkSale} className="text-slate-400 hover:text-orange-500 p-1" title="Pausar Venta"><Clock size={16}/></button>
+                    </div>
                 </div>
+                <button onClick={requestClearCart} className="bg-red-50 text-red-500 p-2 rounded-lg hover:bg-red-100 transition-colors" title="Vaciar Carrito"><Trash2 size={20}/></button>
             </div>
-
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            
+            <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50/50 min-h-0">
                 {itemsWithPrice.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300 select-none"><PackageX size={48}/><p>Carrito vacío</p></div>
+                    <div className="h-full flex flex-col items-center justify-center text-slate-300 select-none"><PackageX size={64}/><p className="mt-4 font-medium">Carrito vacío</p></div>
                 ) : (
                     itemsWithPrice.map((item, idx) => (
-                        <div key={`${item.id}-${idx}`} className="flex gap-3 items-center group animate-in slide-in-from-right-4 duration-200">
-                            <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm text-slate-800 truncate">{item.name}</p>
-                                <div className="flex gap-2 text-xs items-center flex-wrap">
-                                    <span className={item.isWholesaleApplied ? 'text-green-600 font-bold' : 'text-indigo-600'}>${(item.finalPrice * item.quantity).toFixed(2)}</span>
-                                    {item.isPackSale && <span className="bg-blue-100 text-blue-700 px-1 rounded text-[10px] border border-blue-200">Caja</span>}
-                                    {item.isFractionalSale && <span className="bg-purple-100 text-purple-700 px-1 rounded text-[10px] border border-purple-200">Suelto</span>}
-                                    {item.selectedPresentation && <span className="bg-purple-100 text-purple-700 px-1 rounded text-[10px] border border-purple-200">{item.selectedPresentation.name}</span>}
-                                    {item.isWholesaleApplied && <span className="bg-green-100 text-green-700 px-1 rounded text-[10px] border border-green-200">Ahorro</span>}
+                        <div key={`${item.id}-${idx}`} className="bg-white p-2 rounded-xl shadow-sm border border-slate-100 animate-in slide-in-from-right-4 duration-200">
+                            <div className="flex justify-between items-start mb-1">
+                                <p className="font-bold text-xs text-slate-800 leading-tight flex-1">{item.name}</p>
+                                <button onClick={() => requestRemoveItem(idx)} className="text-slate-300 hover:text-red-500 ml-2 p-0.5 hover:bg-red-50 rounded transition-colors"><Trash2 size={14}/></button>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-1 bg-slate-50 p-0.5 rounded-lg border border-slate-200">
+                                    <button onClick={() => updateQuantity(idx, -1)} className="w-6 h-6 flex items-center justify-center bg-white rounded shadow-sm text-red-500 hover:bg-red-50"><Minus size={14}/></button>
+                                    <span className="text-sm font-bold text-slate-700 w-8 text-center">{item.quantity}</span>
+                                    <button onClick={() => updateQuantity(idx, 1)} className="w-6 h-6 flex items-center justify-center bg-white rounded shadow-sm text-green-600 hover:bg-green-50"><Plus size={14}/></button>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-base font-bold text-indigo-900">${(item.finalPrice * item.quantity).toFixed(2)}</p>
+                                    <div className="flex flex-wrap justify-end gap-1">
+                                        {item.isPackSale && <span className="bg-blue-100 text-blue-700 px-1 rounded text-[9px] font-bold border border-blue-200">Caja</span>}
+                                        {item.isWholesaleApplied && <span className="bg-green-100 text-green-700 px-1 rounded text-[9px] font-bold border border-green-200">Mayoreo</span>}
+                                    </div>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-                                <button onClick={() => updateQuantity(idx, -1)} className="w-7 h-7 flex items-center justify-center bg-white rounded shadow-sm text-slate-600 hover:text-red-600 active:scale-95 transition-all"><Minus size={14}/></button>
-                                <span className="w-8 text-center font-bold text-sm text-slate-700">{item.quantity}</span>
-                                <button onClick={() => updateQuantity(idx, 1)} className="w-7 h-7 flex items-center justify-center bg-white rounded shadow-sm text-slate-600 hover:text-green-600 active:scale-95 transition-all"><Plus size={14}/></button>
-                            </div>
-                            <button onClick={() => handleRemoveItemProtected(idx)} className="text-slate-300 hover:text-red-500 transition-colors p-1"><Lock size={14}/></button>
                         </div>
                     ))
                 )}
+                <div ref={endOfListRef}></div>
             </div>
 
-            {promoOpportunities.length > 0 && (
-                <div className="px-4 pb-2">
-                    {promoOpportunities.map((promo) => (
-                    <div key={promo.groupId} className="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-2 flex items-start gap-3 animate-in slide-in-from-bottom-2 fade-in shadow-sm">
-                        <div className="bg-blue-100 p-1.5 rounded-full text-blue-600 shrink-0"><Zap size={16} fill="currentColor" /></div>
-                        <div>
-                            <p className="text-xs text-blue-900 font-bold">¡Faltan {promo.missing} de <span className="uppercase">{promo.groupId}</span>!</p>
-                            <p className="text-[10px] text-blue-700">Precio bajará a <span className="font-bold">${promo.newPrice.toFixed(2)}</span> c/u.</p>
+            {/* SECCIÓN INFERIOR FIJA */}
+            <div className="p-3 bg-white border-t border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-20 shrink-0">
+                {promoOpportunities.length > 0 && (
+                    <div className="mb-2">
+                        {promoOpportunities.map((promo) => (
+                        <div key={promo.groupId} className="flex items-center gap-2 text-xs mb-1 last:mb-0 bg-blue-50 p-1 rounded border border-blue-100 text-blue-800">
+                            <Zap size={12} fill="currentColor" />
+                            <div>Faltan <b>{promo.missing}</b> de {promo.groupId} para precio <b>${promo.newPrice.toFixed(2)}</b></div>
                         </div>
+                        ))}
                     </div>
-                    ))}
+                )}
+                <div className="space-y-1 mb-3">
+                    <div className="flex justify-between text-slate-500 text-xs"><span>Subtotal</span><span>${subtotal.toFixed(2)}</span></div>
+                    {savings > 0 && (<div className="flex justify-between text-green-600 text-xs font-bold"><span>Ahorro</span><span>-${savings.toFixed(2)}</span></div>)}
+                    <div className="flex justify-between text-3xl font-bold text-slate-900 pt-1 border-t border-dashed"><span>Total</span><span>${total.toFixed(2)}</span></div>
                 </div>
-            )}
-
-            <div className="p-4 bg-slate-50 border-t border-slate-200 rounded-b-xl space-y-3">
-                <div className="flex justify-between text-sm text-slate-600"><span>Subtotal</span><span>${subtotal.toFixed(2)}</span></div>
-                {savings > 0 && (<div className="flex justify-between text-sm text-green-600 font-bold"><span>Ahorro aplicado</span><span>-${savings.toFixed(2)}</span></div>)}
-                <div className="flex justify-between text-2xl font-bold text-slate-900 pt-2 border-t"><span>Total</span><span>${total.toFixed(2)}</span></div>
-                
-                <div className="grid grid-cols-3 gap-2 mt-2">
-                    <button onClick={() => initiatePayment('cash')} disabled={cart.length === 0} className="bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold flex flex-col justify-center items-center text-xs gap-1 transition-colors">
-                        <Banknote size={18}/> Efectivo
-                    </button>
-                    <button onClick={() => initiatePayment('card')} disabled={cart.length === 0} className="bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold flex flex-col justify-center items-center text-xs gap-1 transition-colors">
-                        <CreditCard size={18}/> Tarjeta
-                    </button>
-                    <button onClick={() => initiatePayment('credit')} disabled={cart.length === 0} className="bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-lg font-bold flex flex-col justify-center items-center text-xs gap-1 transition-colors">
-                        <Wallet size={18}/> Crédito
-                    </button>
+                <div className="grid grid-cols-3 gap-2">
+                    <button onClick={() => initiatePayment('cash')} disabled={cart.length === 0} className="bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold flex flex-col justify-center items-center text-xs gap-0.5 shadow-lg shadow-green-100 transition-all active:scale-95"><span className="text-[9px] opacity-70">[F10]</span><div className="flex items-center gap-1"><Banknote size={16}/> Efectivo</div></button>
+                    <button onClick={() => initiatePayment('card')} disabled={cart.length === 0} className="bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold flex flex-col justify-center items-center text-xs gap-0.5 shadow-lg shadow-blue-100 transition-all active:scale-95"><span className="text-[9px] opacity-70">[F11]</span><div className="flex items-center gap-1"><CreditCard size={16}/> Tarjeta</div></button>
+                    <button onClick={initiateCredit} disabled={cart.length === 0} className="bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-lg font-bold flex flex-col justify-center items-center text-xs gap-0.5 shadow-lg shadow-purple-100 transition-all active:scale-95"><span className="text-[9px] opacity-70">[F12]</span><div className="flex items-center gap-1"><Wallet size={16}/> Crédito</div></button>
                 </div>
             </div>
         </div>
       </div>
 
-      <KeyboardShortcutsBar onPress={handleShortcut} />
+      {/* BARRA INFERIOR (ESTÁTICA AL FINAL) */}
+      <div className="bg-slate-900 shrink-0 z-50">
+        <KeyboardShortcutsBar setView={setView} />
+      </div>
+
+      {/* MODALES */}
+      {selectedProductForQty && <QuantityModal isOpen={qtyModalOpen} onClose={() => setQtyModalOpen(false)} onConfirm={(qty, p) => { const isL = typeof p === 'boolean' ? p : false; const pres = typeof p === 'object' ? p : null; addToCart(selectedProductForQty, qty, pres, isL); }} product={selectedProductForQty} />}
+      <PaymentModal isOpen={isPaymentOpen} onClose={() => setIsPaymentOpen(false)} onConfirm={handleFinishSale} total={total} method={paymentMethod} />
+      <CreditSaleModal isOpen={isCreditModalOpen} onClose={() => setIsCreditModalOpen(false)} onConfirm={handleFinishCreditSale} total={total} client={selectedClient} />
+      <ClientSearchModal isOpen={isClientSearchOpen} onClose={() => setIsClientSearchOpen(false)} onSelectClient={(c) => { setSelectedClient(c); setIsClientSearchOpen(false); }} />
+      <AdminAuthModal isOpen={showAuth} onClose={() => setShowAuth(false)} onSuccess={handleAuthSuccess} actionName={authAction === 'DELETE_ITEM' ? "Eliminar Producto" : "Vaciar Carrito"} />
+      {showSuccess && (<div className="absolute inset-0 z-40 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center"><div className="bg-white p-8 rounded-3xl shadow-2xl text-center border-4 border-green-100"><div className="text-green-500 mb-4"><Banknote size={48} className="mx-auto"/></div><h2 className="text-3xl font-bold text-slate-800">¡Venta Exitosa!</h2><p className="text-slate-500 mt-2">Imprimiendo ticket...</p></div></div>)}
+      {restoredSession && (<div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 bg-orange-100 border border-orange-300 text-orange-800 px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-in slide-in-from-top-4 fade-in"><AlertCircle size={18} /><span className="text-sm font-medium">Sesión restaurada</span></div>)}
+
     </div>
   );
 };
