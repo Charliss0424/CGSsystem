@@ -32,7 +32,9 @@ import {
   Smartphone,
   Wifi,
   RefreshCw,
-  BoxesIcon
+  BoxesIcon,
+  CalendarCheck, // Nuevo para Agenda Financiera
+  FileSignature  // Nuevo para Cuentas por Pagar
 } from 'lucide-react';
 
 import { ViewState } from '../types';
@@ -62,36 +64,42 @@ export const Dashboard: React.FC<DashboardProps> = ({ setView }) => {
           title="Ventas" 
           gradient="bg-gradient-to-r from-blue-600 to-blue-400"
           items={[
-            { label: 'Punto de Venta', icon: ShoppingCart, action: () => handleNavigation('POS') },
-            { label: 'Presupuestos', icon: ClipboardList, action: () => handleNavigation('PENDING_SALES') },
-            { label: 'Pedidos', icon: ShoppingBag, action: () => handleNavigation('ORDERS') },
-            { label: 'Venta en Ruta', icon: Truck, action: () => handleNavigation('ROUTE_SALES') },
-            { label: 'Clientes', icon: Users, action: () => handleNavigation('CLIENTS_DASHBOARD') },
-            { label: 'Historial', icon: RotateCcw, action: () => handleNavigation('SALES') },
+            { label: 'Punto de Venta', icon: ShoppingCart, action: () => handleNavigation(ViewState.POS) },
+            { label: 'Presupuestos', icon: ClipboardList, action: () => handleNavigation(ViewState.PENDING_SALES) },
+            { label: 'Pedidos', icon: ShoppingBag, action: () => handleNavigation(ViewState.ORDERS) },
+            { label: 'Venta en Ruta', icon: Truck, action: () => handleNavigation(ViewState.ROUTE_SALES) },
+            { label: 'Clientes', icon: Users, action: () => handleNavigation(ViewState.CLIENTS_DASHBOARD) },
+            { label: 'Historial', icon: RotateCcw, action: () => handleNavigation(ViewState.SALES) },
+            // Nuevo Calendario Ventas
+            { label: 'Agenda Entregas', icon: CalendarDays, action: () => handleNavigation(ViewState.SALES_CALENDAR) },
           ]}
         />
 
-        {/* --- COMPRAS --- */}
+        {/* --- COMPRAS (Operativo) --- */}
         <MenuSection 
           title="Compras" 
           gradient="bg-gradient-to-r from-emerald-600 to-emerald-400"
           items={[
-            { label: 'Órdenes de Compra', icon: ClipboardList, action: () => handleNavigation('PURCHASE_ORDERS') },
-            { label: 'Compras', icon: ShoppingBag, action: () => handleNavigation('PURCHASES') },
-            { label: 'Proveedores', icon: Users, action: () => handleNavigation('SUPPLIERS') },
-            { label: 'Calendario', icon: CalendarDays, action: () => handleNavigation('CALENDAR') },
+            { label: 'Órdenes de Compra', icon: ClipboardList, action: () => handleNavigation(ViewState.PURCHASE_ORDERS) },
+            { label: 'Compras', icon: ShoppingBag, action: () => handleNavigation(ViewState.PURCHASES) },
+            { label: 'Proveedores', icon: Users, action: () => handleNavigation(ViewState.SUPPLIERS) },
+            // Calendario Logístico
+            { label: 'Agenda Recepción', icon: Truck, action: () => handleNavigation(ViewState.PURCHASE_CALENDAR) },
           ]}
         />
 
-        {/* --- CONTABILIDAD --- */}
+        {/* --- CONTABILIDAD (Financiero) --- */}
         <MenuSection 
           title="Contabilidad" 
           gradient="bg-gradient-to-r from-purple-600 to-purple-400"
           items={[
             { label: 'Facturas', icon: FileText, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Recibos', icon: Receipt, action: () => handleNavigation('COMING_SOON') },
             { label: 'Gastos', icon: Banknote, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Cobranza', icon: Wallet, action: () => handleNavigation('ACCOUNTS_RECEIVABLE') },
+            // Financiero Real
+            { label: 'Ctas. por Pagar', icon: FileSignature, action: () => handleNavigation(ViewState.ACCOUNTS_PAYABLE) },
+            { label: 'Ctas. por Cobrar', icon: Wallet, action: () => handleNavigation(ViewState.ACCOUNTS_RECEIVABLE) },
+            // Calendario Financiero
+            { label: 'Agenda Financiera', icon: CalendarCheck, action: () => handleNavigation(ViewState.FINANCE_CALENDAR) },
           ]}
         />
 
@@ -101,18 +109,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ setView }) => {
           gradient="bg-gradient-to-r from-amber-600 to-amber-400"
           items={[
             { label: 'Catálogo Productos', icon: Package, action: () => handleNavigation(ViewState.INVENTORY) },
-
-            // Movimientos combinados (si lo usas)
             { label: 'Movimientos', icon: ArrowRightLeft, action: () => handleNavigation(ViewState.INVENTORY_MOVEMENTS) },
-
             { label: 'Auditoría', icon: BarChart3, action: () => handleNavigation(ViewState.INVENTORY_AUDIT) },
             { label: 'Etiquetas', icon: Tag, action: () => handleNavigation(ViewState.INVENTORY_LABELS) },
             { label: 'Sucursales', icon: Store, action: () => handleNavigation(ViewState.INVENTORY_BRANCHES) },
-
-            // Nuevos iconos de tu captura
             { label: 'Stock Mínimo', icon: BoxesIcon, action: () => handleNavigation(ViewState.INVENTORY_MIN_STOCK) },
           ]}
-/>
+        />
 
         {/* --- MARKETING --- */}
         <MenuSection 
@@ -131,7 +134,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setView }) => {
           title="Gestión del Negocio" 
           gradient="bg-gradient-to-r from-cyan-600 to-cyan-400"
           items={[
-            { label: 'Reportes Globales', icon: PieChart, action: () => handleNavigation('REPORTS') },
+            { label: 'Reportes Globales', icon: PieChart, action: () => handleNavigation(ViewState.REPORTS) },
             { label: 'Empleados', icon: Users, action: () => handleNavigation('COMING_SOON') },
             { label: 'Turnos', icon: Clock, action: () => handleNavigation('COMING_SOON') },
             { label: 'Comisiones', icon: BadgeDollarSign, action: () => handleNavigation('COMING_SOON') },
@@ -156,10 +159,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ setView }) => {
           title="Configuración Sistema" 
           gradient="bg-gradient-to-r from-slate-700 to-slate-500"
           items={[
-            { label: 'Hardware / Imp.', icon: Printer, action: () => setView('CONF_HARDWARE') },
-            { label: 'Impuestos', icon: FileSpreadsheet, action: () => setView('CONF_TAXES') },
-            { label: 'Base de Datos', icon: Database, action: () => setView('CONF_DATABASE') },
-            { label: 'Usuarios Sistema', icon: UserCog, action: () => setView('CONF_USERS') },
+            { label: 'Hardware / Imp.', icon: Printer, action: () => handleNavigation(ViewState.CONF_HARDWARE) },
+            { label: 'Impuestos', icon: FileSpreadsheet, action: () => handleNavigation(ViewState.CONF_TAXES) },
+            { label: 'Base de Datos', icon: Database, action: () => handleNavigation(ViewState.CONF_DATABASE) },
+            { label: 'Usuarios Sistema', icon: UserCog, action: () => handleNavigation(ViewState.CONF_USERS) },
           ]}
         />
 

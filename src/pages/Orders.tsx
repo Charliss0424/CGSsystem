@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 import { Order, OrderStatus, ViewState, CartItem, Product } from '../types';
+import { OrderPickingModal } from '../components/OrderPickingModal';
 import { 
     ShoppingBag, 
     ArrowLeft, 
@@ -21,7 +22,13 @@ import {
     CreditCard,
     Save,
     MapPin,
-    AlertTriangle
+    AlertTriangle,
+    ShoppingCart,
+    DollarSign as Dollar,
+    Box,
+    CheckCircle,
+    GripVertical,
+    MoreVertical
 } from 'lucide-react';
 
 interface OrdersProps {
@@ -39,8 +46,12 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
     const [mode, setMode] = useState<OrderMode>('advanced');
     const [activeTab, setActiveTab] = useState<OrderTab>('basic');
 
-    // Filters
-    const [filterStatus, setFilterStatus] = useState<'ALL' | OrderStatus>('ALL');
+    // Modal de Surtido State
+    const [isPickingModalOpen, setIsPickingModalOpen] = useState(false);
+    const [selectedOrderForPicking, setSelectedOrderForPicking] = useState<Order | null>(null);
+
+    // Dragging State
+    const [dragOverStatus, setDragOverStatus] = useState<OrderStatus | null>(null);
 
     // Comprehensive Form State
     const initialFormState: Partial<Order> = {
@@ -67,7 +78,6 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
         setMode(m);
         setFormData({
             ...initialFormState,
-            // Pre-fill some defaults for simple mode
             deliveryDate: m === 'simple' ? new Date().toISOString().slice(0, 16) : '',
             priority: 'Media',
             orderType: 'Venta Regular',
@@ -101,25 +111,35 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
 
         const total = formData.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
         const advance = Number(formData.advancePayment) || 0;
+        const orderFolio = `ORD-${Date.now().toString().slice(-6)}`;
 
-        addOrder({
+        const newOrder: Order = {
+            id: Date.now().toString(),
             customerName: formData.customerName,
-            customerPhone: formData.customerPhone,
-            customerAddress: formData.customerAddress,
+            customerPhone: formData.customerPhone || '',
+            customerAddress: formData.customerAddress || '',
             deliveryDate: formData.deliveryDate,
             items: formData.items,
             total: total,
             advancePayment: advance,
             balance: total - advance,
-            notes: formData.notes,
-            priority: formData.priority as any,
-            orderType: formData.orderType as any,
-            paymentMethod: formData.paymentMethod as any,
-            paymentTerm: formData.paymentTerm as any
-        });
+            notes: formData.notes || '',
+            priority: formData.priority as 'Alta' | 'Media' | 'Baja',
+            orderType: formData.orderType as string,
+            paymentMethod: formData.paymentMethod as string,
+            paymentTerm: formData.paymentTerm as string,
+            status: 'PENDING',
+            orderFolio: orderFolio,
+            createdAt: new Date().toISOString()
+        };
 
+        console.log('Creando pedido:', newOrder);
+        addOrder(newOrder);
+        
         setIsModalOpen(false);
-        alert("Pedido creado exitosamente");
+        setFormData(initialFormState);
+        
+        alert(`✅ Pedido creado exitosamente\n📋 Folio: ${orderFolio}\n💰 Total: $${total.toFixed(2)}`);
     };
 
     // --- Product Helper Functions ---
@@ -130,9 +150,14 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
             let newItems;
             
             if (existing) {
-                newItems = currentItems.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
+                newItems = currentItems.map(i => 
+                    i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
+                );
             } else {
-                newItems = [...currentItems, { ...product, quantity: 1 }];
+                newItems = [...currentItems, { 
+                    ...product, 
+                    quantity: 1 
+                }];
             }
             return { ...prev, items: newItems };
         });
@@ -143,7 +168,8 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
             const currentItems = prev.items || [];
             const newItems = currentItems.map(item => {
                 if (item.id === id) {
-                    return { ...item, quantity: Math.max(1, item.quantity + delta) };
+                    const newQuantity = Math.max(1, item.quantity + delta);
+                    return { ...item, quantity: newQuantity };
                 }
                 return item;
             });
@@ -173,38 +199,168 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
 
     // Filtered Products for Autocomplete
     const filteredProducts = useMemo(() => {
-        if (!productSearch) return [];
+        if (!productSearch.trim()) return [];
         return products.filter(p => 
             p.name.toLowerCase().includes(productSearch.toLowerCase()) || 
-            p.sku.toLowerCase().includes(productSearch.toLowerCase())
-        ).slice(0, 5);
+            (p.sku && p.sku.toLowerCase().includes(productSearch.toLowerCase()))
+        ).slice(0, 6);
     }, [products, productSearch]);
 
     const orderTotal = (formData.items || []).reduce((acc, i) => acc + (i.price * i.quantity), 0);
 
-    const moveOrder = (id: string, currentStatus: OrderStatus) => {
-        const flow: OrderStatus[] = ['PENDING', 'PROCESSING', 'READY', 'DELIVERED'];
-        const idx = flow.indexOf(currentStatus);
-        if (idx !== -1 && idx < flow.length - 1) {
-            updateOrderStatus(id, flow[idx + 1]);
+    // DRAG AND DROP FUNCTIONS
+    const handleDragStart = (e: React.DragEvent, order: Order) => {
+        e.dataTransfer.setData('application/json', JSON.stringify({
+            orderId: order.id,
+            fromStatus: order.status
+        }));
+        e.dataTransfer.effectAllowed = 'move';
+        
+        // Efecto visual
+        const element = e.currentTarget as HTMLElement;
+        element.classList.add('opacity-40', 'scale-95');
+    };
+
+    const handleDragEnd = (e: React.DragEvent) => {
+        const element = e.currentTarget as HTMLElement;
+        element.classList.remove('opacity-40', 'scale-95');
+    };
+
+    const handleDragOver = (e: React.DragEvent, status: OrderStatus) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        setDragOverStatus(status);
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        setDragOverStatus(null);
+    };
+
+    const handleDrop = (e: React.DragEvent, targetStatus: OrderStatus) => {
+        e.preventDefault();
+        
+        try {
+            const data = JSON.parse(e.dataTransfer.getData('application/json'));
+            const { orderId, fromStatus } = data;
+            
+            if (fromStatus !== targetStatus) {
+                // Si es de PENDING a PROCESSING, abrir modal de surtido
+                if (fromStatus === 'PENDING' && targetStatus === 'PROCESSING') {
+                    const orderToPick = orders.find(o => o.id === orderId);
+                    if (orderToPick) {
+                        setSelectedOrderForPicking(orderToPick);
+                        setIsPickingModalOpen(true);
+                    }
+                } else {
+                    updateOrderStatus(orderId, targetStatus);
+                }
+            }
+        } catch (error) {
+            console.error('Error processing drop:', error);
+        }
+        
+        setDragOverStatus(null);
+    };
+
+    // Función para abrir modal de surtido manualmente
+    const openPickingModal = (order: Order) => {
+        setSelectedOrderForPicking(order);
+        setIsPickingModalOpen(true);
+    };
+
+    // Función para finalizar el surtido
+    const handleFinishPicking = () => {
+        if (selectedOrderForPicking) {
+            updateOrderStatus(selectedOrderForPicking.id, 'PROCESSING');
+            setIsPickingModalOpen(false);
+            setSelectedOrderForPicking(null);
+            alert(`✅ Pedido #${selectedOrderForPicking.orderFolio || selectedOrderForPicking.id} en proceso de preparación`);
         }
     };
 
+    // Función para marcar como listo
+    const markAsReady = (orderId: string) => {
+        updateOrderStatus(orderId, 'READY');
+        alert('✅ Pedido marcado como listo para entrega');
+    };
+
+    // Función para marcar como entregado
+    const markAsDelivered = (orderId: string) => {
+        updateOrderStatus(orderId, 'DELIVERED');
+        alert('✅ Pedido marcado como entregado');
+    };
+
+    // Estadísticas para el tablero informativo
+    const totalOrders = orders.length;
+    const pendingOrders = orders.filter(o => o.status === 'PENDING').length;
+    const processingOrders = orders.filter(o => o.status === 'PROCESSING').length;
+    const readyOrders = orders.filter(o => o.status === 'READY').length;
+    const deliveredOrders = orders.filter(o => o.status === 'DELIVERED').length;
+    const totalRevenue = orders.reduce((sum, order) => sum + order.total, 0);
+
+    // Agrupar pedidos por estado
+    const ordersByStatus = useMemo(() => ({
+        PENDING: orders.filter(o => o.status === 'PENDING'),
+        PROCESSING: orders.filter(o => o.status === 'PROCESSING'),
+        READY: orders.filter(o => o.status === 'READY'),
+        DELIVERED: orders.filter(o => o.status === 'DELIVERED')
+    }), [orders]);
+
+    const statusConfigs = [
+        { 
+            status: 'PENDING' as OrderStatus, 
+            title: 'Pendientes', 
+            icon: Clock, 
+            color: 'yellow',
+            bgColor: 'bg-yellow-50',
+            borderColor: 'border-yellow-200',
+            textColor: 'text-yellow-700'
+        },
+        { 
+            status: 'PROCESSING' as OrderStatus, 
+            title: 'En Proceso', 
+            icon: Package, 
+            color: 'blue',
+            bgColor: 'bg-blue-50',
+            borderColor: 'border-blue-200',
+            textColor: 'text-blue-700'
+        },
+        { 
+            status: 'READY' as OrderStatus, 
+            title: 'Listos', 
+            icon: CheckCircle2, 
+            color: 'purple',
+            bgColor: 'bg-purple-50',
+            borderColor: 'border-purple-200',
+            textColor: 'text-purple-700'
+        },
+        { 
+            status: 'DELIVERED' as OrderStatus, 
+            title: 'Entregados', 
+            icon: Truck, 
+            color: 'green',
+            bgColor: 'bg-green-50',
+            borderColor: 'border-green-200',
+            textColor: 'text-green-700'
+        }
+    ];
+
     return (
-        <div className="p-8 max-w-[1920px] mx-auto animate-fade-in bg-slate-50 min-h-screen flex flex-col">
+        <div className="p-6 max-w-[1920px] mx-auto animate-fade-in bg-gray-50 min-h-screen flex flex-col">
             
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-4">
                     <button 
                         onClick={() => setView('DASHBOARD')} 
-                        className="p-2 hover:bg-slate-200 rounded-full transition-colors"
+                        className="p-2 hover:bg-gray-200 rounded-full transition-colors"
                     >
-                        <ArrowLeft size={24} className="text-slate-600" />
+                        <ArrowLeft size={24} className="text-gray-600" />
                     </button>
                     <div>
-                        <h2 className="text-3xl font-bold text-slate-800">Pedidos</h2>
-                        <p className="text-slate-500 text-sm">Gestiona entregas, anticipos y producción.</p>
+                        <h2 className="text-3xl font-bold text-gray-800">Pedidos</h2>
+                        <p className="text-gray-500 text-sm">Gestiona entregas y producción</p>
                     </div>
                 </div>
                 <div className="flex gap-3">
@@ -223,13 +379,123 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
                 </div>
             </div>
 
-            {/* Kanban Board */}
-            <div className="flex-1 overflow-x-auto pb-4">
-                <div className="flex gap-6 min-w-[1200px] h-full">
-                    <OrderColumn title="Pendientes" status="PENDING" icon={Clock} color="bg-yellow-50 border-yellow-100" headerColor="text-yellow-700" orders={orders.filter(o => o.status === 'PENDING')} onMove={moveOrder} onDelete={deleteOrder} />
-                    <OrderColumn title="En Proceso" status="PROCESSING" icon={Package} color="bg-blue-50 border-blue-100" headerColor="text-blue-700" orders={orders.filter(o => o.status === 'PROCESSING')} onMove={moveOrder} onDelete={deleteOrder} />
-                    <OrderColumn title="Listo para Entrega" status="READY" icon={CheckCircle2} color="bg-purple-50 border-purple-100" headerColor="text-purple-700" orders={orders.filter(o => o.status === 'READY')} onMove={moveOrder} onDelete={deleteOrder} />
-                    <OrderColumn title="Entregados" status="DELIVERED" icon={Truck} color="bg-green-50 border-green-100" headerColor="text-green-700" orders={orders.filter(o => o.status === 'DELIVERED')} onMove={moveOrder} onDelete={deleteOrder} />
+            {/* Tablero Informativo */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+                {/* Total Pedidos */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-sm text-gray-500 font-medium">Total Pedidos</p>
+                            <h3 className="text-3xl font-bold text-gray-800 mt-2">{totalOrders}</h3>
+                        </div>
+                        <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                            <ShoppingCart size={24} />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Pendientes */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-sm text-gray-500 font-medium">Pendientes</p>
+                            <h3 className="text-3xl font-bold text-yellow-600 mt-2">{pendingOrders}</h3>
+                        </div>
+                        <div className="p-3 bg-yellow-50 text-yellow-600 rounded-xl">
+                            <Clock size={24} />
+                        </div>
+                    </div>
+                </div>
+
+                {/* En Proceso */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-sm text-gray-500 font-medium">En Proceso</p>
+                            <h3 className="text-3xl font-bold text-blue-600 mt-2">{processingOrders}</h3>
+                        </div>
+                        <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                            <Package size={24} />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Listos */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-sm text-gray-500 font-medium">Listos</p>
+                            <h3 className="text-3xl font-bold text-purple-600 mt-2">{readyOrders}</h3>
+                        </div>
+                        <div className="p-3 bg-purple-50 text-purple-600 rounded-xl">
+                            <CheckCircle2 size={24} />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Ventas Totales */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-sm text-gray-500 font-medium">Ventas Totales</p>
+                            <h3 className="text-3xl font-bold text-emerald-600 mt-2">${totalRevenue.toLocaleString()}</h3>
+                        </div>
+                        <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                            <Dollar size={24} />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Pipeline Drag and Drop */}
+            <div className="flex-1 overflow-hidden">
+                <div className="flex gap-4 h-full min-h-[600px]">
+                    {statusConfigs.map((config) => (
+                        <div 
+                            key={config.status}
+                            className={`flex-1 min-w-[280px] flex flex-col rounded-xl h-full border-2 transition-all ${
+                                dragOverStatus === config.status 
+                                    ? 'border-dashed border-blue-500 bg-blue-50' 
+                                    : `${config.borderColor} ${config.bgColor}`
+                            }`}
+                            onDragOver={(e) => handleDragOver(e, config.status)}
+                            onDragLeave={handleDragLeave}
+                            onDrop={(e) => handleDrop(e, config.status)}
+                        >
+                            {/* Columna Header */}
+                            <div className={`p-4 flex items-center gap-2 font-bold border-b ${config.bgColor} ${config.textColor} ${config.borderColor}`}>
+                                <config.icon size={20} />
+                                <span>{config.title}</span>
+                                <span className="ml-auto bg-white/50 px-2 py-1 rounded-full text-sm font-bold">
+                                    {ordersByStatus[config.status].length}
+                                </span>
+                            </div>
+
+                            {/* Lista de Pedidos */}
+                            <div className="flex-1 p-3 overflow-y-auto space-y-3">
+                                {ordersByStatus[config.status].map((order) => (
+                                    <OrderCard 
+                                        key={order.id}
+                                        order={order}
+                                        status={config.status}
+                                        onDragStart={(e) => handleDragStart(e, order)}
+                                        onDragEnd={handleDragEnd}
+                                        onDelete={deleteOrder}
+                                        onStartPicking={openPickingModal}
+                                        onReady={() => markAsReady(order.id)}
+                                        onDeliver={() => markAsDelivered(order.id)}
+                                    />
+                                ))}
+                                
+                                {ordersByStatus[config.status].length === 0 && (
+                                    <div className="h-full flex flex-col items-center justify-center text-gray-400 p-8">
+                                        <ShoppingBag size={32} className="mb-2 opacity-30" />
+                                        <p className="text-sm font-medium">Sin pedidos</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
 
@@ -239,19 +505,19 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
                     <div className={`bg-white rounded-2xl w-full shadow-2xl animate-fade-in flex flex-col max-h-[90vh] ${mode === 'simple' ? 'max-w-xl' : 'max-w-4xl'}`}>
                         
                         {/* Modal Header */}
-                        <div className={`p-6 border-b border-slate-100 flex justify-between items-center ${mode === 'simple' ? 'bg-emerald-50 rounded-t-2xl' : ''}`}>
+                        <div className={`p-6 border-b border-gray-100 flex justify-between items-center ${mode === 'simple' ? 'bg-emerald-50 rounded-t-2xl' : ''}`}>
                             <div className="flex items-center gap-3">
                                 {mode === 'simple' && <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><Zap size={20} fill="currentColor"/></div>}
-                                <h3 className={`text-xl font-bold flex items-center gap-2 ${mode === 'simple' ? 'text-emerald-900' : 'text-slate-800'}`}>
+                                <h3 className={`text-xl font-bold flex items-center gap-2 ${mode === 'simple' ? 'text-emerald-900' : 'text-gray-800'}`}>
                                     {mode === 'simple' ? 'Pedido Rápido' : 'Nuevo Pedido'}
                                 </h3>
                             </div>
-                            <button onClick={() => setIsModalOpen(false)}><X className="text-slate-400 hover:text-slate-600" /></button>
+                            <button onClick={() => setIsModalOpen(false)}><X className="text-gray-400 hover:text-gray-600" /></button>
                         </div>
 
                         {/* Advanced Mode Tabs */}
                         {mode === 'advanced' && (
-                            <div className="flex border-b border-slate-100 px-6 bg-slate-50/50 overflow-x-auto">
+                            <div className="flex border-b border-gray-100 px-6 bg-gray-50/50 overflow-x-auto">
                                 {[
                                     { id: 'basic', label: 'Información Básica', icon: FileText },
                                     { id: 'client', label: 'Cliente', icon: User },
@@ -264,7 +530,7 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
                                         className={`flex items-center gap-2 px-5 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                                             activeTab === tab.id 
                                             ? 'border-blue-600 text-blue-600 bg-white' 
-                                            : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
+                                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100/50'
                                         }`}
                                     >
                                         <tab.icon size={18} />
@@ -288,11 +554,11 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
                                         </div>
                                         
                                         <div>
-                                            <label className="block text-sm font-bold text-slate-700 mb-1">Nombre del Cliente</label>
+                                            <label className="block text-sm font-bold text-gray-700 mb-1">Nombre del Cliente</label>
                                             <input 
                                                 autoFocus
                                                 type="text" 
-                                                className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                                                className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
                                                 placeholder="Ej. Juan Pérez"
                                                 value={formData.customerName}
                                                 onChange={e => setFormData({...formData, customerName: e.target.value})}
@@ -302,20 +568,20 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
 
                                         <div className="grid grid-cols-2 gap-4">
                                              <div>
-                                                <label className="block text-sm font-bold text-slate-700 mb-1">Fecha de Entrega</label>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">Fecha de Entrega</label>
                                                 <input 
                                                     type="datetime-local" 
-                                                    className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                                                    className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
                                                     value={formData.deliveryDate}
                                                     onChange={e => setFormData({...formData, deliveryDate: e.target.value})}
                                                     required
                                                 />
                                             </div>
                                             <div>
-                                                <label className="block text-sm font-bold text-slate-700 mb-1">Anticipo ($)</label>
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">Anticipo ($)</label>
                                                 <input 
                                                     type="number"
-                                                    className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                                                    className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
                                                     placeholder="0.00"
                                                     value={formData.advancePayment || ''}
                                                     onChange={e => setFormData({...formData, advancePayment: Number(e.target.value)})}
@@ -324,19 +590,19 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
                                         </div>
 
                                         {/* Simplified Product Selector */}
-                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                                            <label className="block text-sm font-bold text-slate-700 mb-2">Productos</label>
+                                        <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                            <label className="block text-sm font-bold text-gray-700 mb-2">Productos</label>
                                             <div className="relative mb-3">
-                                                <Search className="absolute left-3 top-3 text-slate-400" size={18} />
+                                                <Search className="absolute left-3 top-3 text-gray-400" size={18} />
                                                 <input 
                                                     type="text" 
-                                                    placeholder="Buscar y agregar..." 
-                                                    className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
+                                                    placeholder="Buscar productos..." 
+                                                    className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
                                                     value={productSearch}
                                                     onChange={e => setProductSearch(e.target.value)}
                                                 />
                                                 {filteredProducts.length > 0 && (
-                                                    <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 shadow-xl rounded-b-lg mt-1 z-10 max-h-40 overflow-y-auto">
+                                                    <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 shadow-xl rounded-b-lg mt-1 z-10 max-h-40 overflow-y-auto">
                                                         {filteredProducts.map(p => (
                                                             <div key={p.id} className="p-2 hover:bg-emerald-50 cursor-pointer flex justify-between" onClick={() => {addToCart(p); setProductSearch('');}}>
                                                                 <span className="text-sm">{p.name}</span>
@@ -349,25 +615,20 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
                                             
                                             <div className="space-y-2 max-h-32 overflow-y-auto">
                                                 {(formData.items || []).map(item => (
-                                                    <div key={item.id} className="flex justify-between items-center bg-white p-2 rounded border border-slate-100">
+                                                    <div key={item.id} className="flex justify-between items-center bg-white p-2 rounded border border-gray-100">
                                                         <div className="text-sm">
                                                             <span className="font-bold">{item.quantity}x</span> {item.name}
                                                         </div>
-                                                        <button type="button" onClick={() => removeProduct(item.id)} className="text-slate-400 hover:text-red-500"><X size={14}/></button>
+                                                        <button type="button" onClick={() => removeProduct(item.id)} className="text-gray-400 hover:text-red-500"><X size={14}/></button>
                                                     </div>
                                                 ))}
                                                 {(!formData.items || formData.items.length === 0) && (
-                                                    <p className="text-xs text-slate-400 text-center py-2">Sin productos</p>
+                                                    <p className="text-xs text-gray-400 text-center py-2">Sin productos</p>
                                                 )}
                                             </div>
                                         </div>
-                                        
-                                        <div className="text-right text-xl font-bold text-slate-800">
-                                            Total: ${orderTotal.toFixed(2)}
-                                        </div>
                                     </div>
                                 )}
-
 
                                 {/* --- ADVANCED MODE TABS CONTENT --- */}
 
@@ -376,13 +637,13 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
                                     <div className="space-y-6 animate-fade-in">
                                         <div className="grid grid-cols-2 gap-6">
                                             <div>
-                                                <label className="block text-sm font-medium text-slate-700 mb-1">Número de Pedido</label>
-                                                <input disabled type="text" className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-lg text-slate-500" value="Autogenerado" />
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Número de Pedido</label>
+                                                <input disabled type="text" className="w-full p-2.5 bg-gray-100 border border-gray-200 rounded-lg text-gray-500" value="Autogenerado" />
                                             </div>
                                             <div>
-                                                 <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Pedido</label>
+                                                 <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Pedido</label>
                                                  <select 
-                                                    className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                                                    className="w-full p-2.5 bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                                                     value={formData.orderType}
                                                     onChange={e => setFormData({...formData, orderType: e.target.value as any})}
                                                 >
@@ -395,19 +656,19 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
 
                                         <div className="grid grid-cols-2 gap-6">
                                              <div>
-                                                <label className="block text-sm font-medium text-slate-700 mb-1">Fecha de Pedido</label>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha de Pedido</label>
                                                 <input 
                                                     type="date" 
-                                                    className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" 
-                                                    value={new Date().toISOString().split('T')[0]} // Just for display
+                                                    className="w-full p-2.5 bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" 
+                                                    value={new Date().toISOString().split('T')[0]}
                                                     disabled
                                                 />
                                             </div>
                                             <div>
-                                                <label className="block text-sm font-medium text-slate-700 mb-1">Fecha de Entrega</label>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha de Entrega</label>
                                                 <input 
                                                     type="datetime-local" 
-                                                    className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                                                    className="w-full p-2.5 bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                                                     value={formData.deliveryDate}
                                                     onChange={e => setFormData({...formData, deliveryDate: e.target.value})}
                                                     required
@@ -416,9 +677,9 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
                                         </div>
 
                                         <div>
-                                             <label className="block text-sm font-medium text-slate-700 mb-1">Prioridad</label>
+                                             <label className="block text-sm font-medium text-gray-700 mb-1">Prioridad</label>
                                              <select 
-                                                className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="w-full p-2.5 bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                                                 value={formData.priority}
                                                 onChange={e => setFormData({...formData, priority: e.target.value as any})}
                                             >
@@ -434,9 +695,9 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
                                 {mode === 'advanced' && activeTab === 'client' && (
                                     <div className="space-y-6 animate-fade-in">
                                         <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Cliente</label>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
                                             <select 
-                                                className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="w-full p-2.5 bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                                                 value={selectedClientId}
                                                 onChange={e => handleClientSelect(e.target.value)}
                                             >
@@ -449,19 +710,19 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
 
                                         <div className="grid grid-cols-2 gap-6">
                                             <div>
-                                                <label className="block text-sm font-medium text-slate-700 mb-1">Teléfono</label>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
                                                 <input 
                                                     type="text" 
-                                                    className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none"
+                                                    className="w-full p-2.5 bg-white border border-gray-200 rounded-lg outline-none"
                                                     value={formData.customerPhone || ''}
                                                     onChange={e => setFormData({...formData, customerPhone: e.target.value})}
                                                 />
                                             </div>
                                              <div>
-                                                <label className="block text-sm font-medium text-slate-700 mb-1">Nombre (Manual)</label>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre (Manual)</label>
                                                 <input 
                                                     type="text" 
-                                                    className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none"
+                                                    className="w-full p-2.5 bg-white border border-gray-200 rounded-lg outline-none"
                                                     value={formData.customerName || ''}
                                                     onChange={e => setFormData({...formData, customerName: e.target.value})}
                                                     placeholder="Si no está en catálogo"
@@ -470,19 +731,19 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
                                         </div>
 
                                         <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Dirección de Entrega</label>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Dirección de Entrega</label>
                                             <input 
                                                 type="text" 
-                                                className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none"
+                                                className="w-full p-2.5 bg-white border border-gray-200 rounded-lg outline-none"
                                                 value={formData.customerAddress || ''}
                                                 onChange={e => setFormData({...formData, customerAddress: e.target.value})}
                                             />
                                         </div>
 
                                         <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Instrucciones de Entrega</label>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Instrucciones de Entrega</label>
                                             <textarea 
-                                                className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none h-24 resize-none"
+                                                className="w-full p-2.5 bg-white border border-gray-200 rounded-lg outline-none h-24 resize-none"
                                                 value={formData.notes || ''}
                                                 onChange={e => setFormData({...formData, notes: e.target.value})}
                                             ></textarea>
@@ -492,82 +753,128 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
 
                                 {/* TAB 3: PRODUCTS */}
                                 {mode === 'advanced' && activeTab === 'products' && (
-                                    <div className="space-y-4 animate-fade-in h-full flex flex-col">
-                                        <div className="flex justify-between items-center">
-                                            <h4 className="font-bold text-slate-800">Productos</h4>
-                                            <button 
-                                                type="button" 
-                                                onClick={() => {
-                                                    const dummyProduct = products[0]; // Just for demo, use the search in real app
-                                                    if(dummyProduct) addToCart(dummyProduct);
-                                                }}
-                                                className="text-sm bg-blue-50 text-blue-600 px-3 py-1 rounded-lg font-bold hover:bg-blue-100"
-                                            >
-                                                + Agregar Producto (Demo)
-                                            </button>
-                                        </div>
-
-                                        {/* Product Search */}
-                                        <div className="relative">
-                                            <Search className="absolute left-3 top-3 text-slate-400" size={18} />
-                                            <input 
-                                                type="text" 
-                                                placeholder="Buscar producto..." 
-                                                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                                                value={productSearch}
-                                                onChange={e => setProductSearch(e.target.value)}
-                                            />
-                                            {filteredProducts.length > 0 && (
-                                                <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 shadow-xl rounded-b-lg mt-1 z-10 max-h-40 overflow-y-auto">
-                                                    {filteredProducts.map(p => (
-                                                        <div key={p.id} className="p-2 hover:bg-blue-50 cursor-pointer flex justify-between" onClick={() => {addToCart(p); setProductSearch('');}}>
-                                                            <span className="text-sm">{p.name}</span>
-                                                            <span className="text-xs font-bold">${p.price}</span>
-                                                        </div>
-                                                    ))}
+                                    <div className="h-full flex flex-col">
+                                        <div className="space-y-4 flex-shrink-0">
+                                            <div className="flex justify-between items-center">
+                                                <h4 className="font-bold text-gray-800">Productos</h4>
+                                                <div className="text-sm text-gray-500">
+                                                    {products.length} productos disponibles
                                                 </div>
-                                            )}
+                                            </div>
+
+                                            {/* Product Search con resultados */}
+                                            <div className="relative">
+                                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                                                <input 
+                                                    type="text" 
+                                                    placeholder="Buscar producto..." 
+                                                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg outline-none"
+                                                    value={productSearch}
+                                                    onChange={e => setProductSearch(e.target.value)}
+                                                />
+                                                
+                                                {/* Mostrar resultados de búsqueda SOLO cuando hay búsqueda */}
+                                                {productSearch.trim() && filteredProducts.length > 0 && (
+                                                    <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 shadow-lg rounded-b-lg mt-1 z-20 max-h-60 overflow-y-auto">
+                                                        <div className="p-2 bg-gray-50 text-xs text-gray-500 font-medium">
+                                                            Resultados de búsqueda ({filteredProducts.length})
+                                                        </div>
+                                                        {filteredProducts.map(p => (
+                                                            <div 
+                                                                key={p.id} 
+                                                                className="p-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-0"
+                                                                onClick={() => { addToCart(p); setProductSearch(''); }}
+                                                            >
+                                                                <div className="flex justify-between items-center">
+                                                                    <div>
+                                                                        <div className="font-medium text-gray-800">{p.name}</div>
+                                                                        <div className="text-xs text-gray-500">{p.sku || 'Sin SKU'}</div>
+                                                                    </div>
+                                                                    <div className="text-right">
+                                                                        <div className="font-bold text-gray-800">${p.price}</div>
+                                                                        <div className="text-xs text-gray-500">Disponible</div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                
+                                                {/* Mostrar mensaje si no hay resultados */}
+                                                {productSearch.trim() && filteredProducts.length === 0 && (
+                                                    <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 shadow-lg rounded-b-lg mt-1 z-20 p-4">
+                                                        <div className="text-center text-gray-500">
+                                                            No se encontraron productos para "{productSearch}"
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
 
-                                        {/* List */}
-                                        <div className="bg-slate-50 rounded-xl border border-slate-200 flex-1 overflow-y-auto p-2">
-                                            {(formData.items || []).length === 0 ? (
-                                                <div className="h-full flex items-center justify-center text-slate-400">Sin productos seleccionados</div>
-                                            ) : (
-                                                <table className="w-full text-left text-sm">
-                                                    <thead>
-                                                        <tr className="border-b border-slate-200 text-slate-500">
-                                                            <th className="p-2">Producto</th>
-                                                            <th className="p-2 text-center">Cant.</th>
-                                                            <th className="p-2 text-right">Total</th>
-                                                            <th className="p-2"></th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {(formData.items || []).map(item => (
-                                                            <tr key={item.id} className="border-b border-slate-100 last:border-0 bg-white">
-                                                                <td className="p-2 font-medium">{item.name} <br/> <span className="text-xs text-slate-400">{item.sku}</span></td>
-                                                                <td className="p-2 text-center">
-                                                                    <div className="flex items-center justify-center gap-1">
-                                                                        <button type="button" onClick={() => updateQuantity(item.id, -1)} className="w-6 h-6 bg-slate-100 rounded">-</button>
-                                                                        <span className="w-6 text-center">{item.quantity}</span>
-                                                                        <button type="button" onClick={() => updateQuantity(item.id, 1)} className="w-6 h-6 bg-slate-100 rounded">+</button>
+                                        {/* Products List Container */}
+                                        <div className="flex-1 min-h-0 mt-4">
+                                            <div className="h-full border border-gray-200 rounded-lg overflow-hidden flex flex-col">
+                                                <div className="flex-1 overflow-y-auto">
+                                                    {(formData.items || []).length === 0 ? (
+                                                        <div className="h-full flex flex-col items-center justify-center text-gray-400 p-8">
+                                                            <ShoppingBag size={48} className="mb-3 opacity-30" />
+                                                            <p className="text-lg font-medium">Sin productos seleccionados</p>
+                                                            <p className="text-sm mt-1">Agrega productos para comenzar el pedido</p>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="divide-y divide-gray-100">
+                                                            {(formData.items || []).map(item => (
+                                                                <div key={item.id} className="p-4 hover:bg-gray-50">
+                                                                    <div className="flex items-start justify-between mb-2">
+                                                                        <div className="flex-1">
+                                                                            <div className="font-bold text-gray-800 text-lg">{item.name}</div>
+                                                                            <div className="text-sm text-gray-500">{item.sku || 'Sin SKU'}</div>
+                                                                        </div>
+                                                                        <button 
+                                                                            type="button" 
+                                                                            onClick={() => removeProduct(item.id)}
+                                                                            className="text-gray-400 hover:text-red-500 p-1"
+                                                                        >
+                                                                            <X size={18} />
+                                                                        </button>
                                                                     </div>
-                                                                </td>
-                                                                <td className="p-2 text-right font-bold">${(item.price * item.quantity).toFixed(2)}</td>
-                                                                <td className="p-2 text-right">
-                                                                    <button type="button" onClick={() => removeProduct(item.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button>
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            )}
-                                        </div>
-                                        
-                                        <div className="flex justify-between items-center pt-2 border-t border-slate-100 font-bold text-lg text-slate-800">
-                                            <span>Total</span>
-                                            <span>${orderTotal.toFixed(2)}</span>
+                                                                    
+                                                                    <div className="flex items-center justify-between mt-3">
+                                                                        <div className="flex items-center space-x-3">
+                                                                            <span className="text-sm text-gray-600">Cant.</span>
+                                                                            <div className="flex items-center border border-gray-200 rounded-md">
+                                                                                <button 
+                                                                                    type="button" 
+                                                                                    onClick={() => updateQuantity(item.id, -1)}
+                                                                                    className="px-3 py-1 text-gray-600 hover:bg-gray-100"
+                                                                                >
+                                                                                    -
+                                                                                </button>
+                                                                                <span className="px-3 py-1 min-w-[40px] text-center font-medium">{item.quantity}</span>
+                                                                                <button 
+                                                                                    type="button" 
+                                                                                    onClick={() => updateQuantity(item.id, 1)}
+                                                                                    className="px-3 py-1 text-gray-600 hover:bg-gray-100"
+                                                                                >
+                                                                                    +
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="text-right">
+                                                                            <div className="text-lg font-bold text-gray-800">
+                                                                                ${(item.price * item.quantity).toFixed(2)}
+                                                                            </div>
+                                                                            <div className="text-sm text-gray-500">
+                                                                                ${item.price} c/u
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -576,9 +883,9 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
                                 {mode === 'advanced' && activeTab === 'payment' && (
                                     <div className="space-y-6 animate-fade-in">
                                         <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Método de Pago</label>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Método de Pago</label>
                                             <select 
-                                                className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="w-full p-2.5 bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                                                 value={formData.paymentMethod}
                                                 onChange={e => setFormData({...formData, paymentMethod: e.target.value as any})}
                                             >
@@ -589,9 +896,9 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
                                         </div>
 
                                         <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Términos de Pago</label>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Términos de Pago</label>
                                             <select 
-                                                className="w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="w-full p-2.5 bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                                                 value={formData.paymentTerm}
                                                 onChange={e => setFormData({...formData, paymentTerm: e.target.value as any})}
                                             >
@@ -614,11 +921,11 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
                                                 />
                                              </div>
                                              <div className="flex justify-between mt-3 text-sm">
-                                                 <span className="text-slate-500">Total Pedido:</span>
+                                                 <span className="text-gray-500">Total Pedido:</span>
                                                  <span className="font-bold">${orderTotal.toFixed(2)}</span>
                                              </div>
                                              <div className="flex justify-between mt-1 text-sm">
-                                                 <span className="text-slate-500">Resta por Pagar:</span>
+                                                 <span className="text-gray-500">Resta por Pagar:</span>
                                                  <span className="font-bold text-red-600">${(orderTotal - (Number(formData.advancePayment) || 0)).toFixed(2)}</span>
                                              </div>
                                         </div>
@@ -628,108 +935,217 @@ export const Orders: React.FC<OrdersProps> = ({ setView }) => {
                             </form>
                         </div>
 
-                        {/* Footer Buttons */}
-                        <div className="p-6 border-t border-slate-100 flex justify-end gap-3 bg-slate-50 rounded-b-2xl">
-                            <button 
-                                onClick={() => setIsModalOpen(false)}
-                                className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-colors"
-                            >
-                                Cancelar
-                            </button>
-                            <button 
-                                type="submit" 
-                                form="orderForm"
-                                className={`px-6 py-2.5 text-white font-bold rounded-xl shadow-lg transition-all flex items-center gap-2 ${mode === 'simple' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'}`}
-                            >
-                                <Save size={18} />
-                                {mode === 'simple' ? 'Guardar Rápido' : 'Guardar Pedido'}
-                            </button>
+                        {/* Footer Buttons con Total */}
+                        <div className="p-6 border-t border-gray-100 flex flex-col gap-4 bg-gray-50 rounded-b-2xl">
+                            {(formData.items || []).length > 0 && (
+                                <div className="flex justify-between items-center px-2">
+                                    <span className="text-lg font-bold text-gray-700">Total:</span>
+                                    <span className="text-2xl font-bold text-emerald-600">${orderTotal.toFixed(2)}</span>
+                                </div>
+                            )}
+                            
+                            <div className="flex justify-end gap-3">
+                                <button 
+                                    onClick={() => setIsModalOpen(false)}
+                                    className="px-6 py-2.5 text-gray-600 font-bold hover:bg-gray-200 rounded-xl transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    form="orderForm"
+                                    className={`px-6 py-2.5 text-white font-bold rounded-xl shadow-lg transition-all flex items-center gap-2 ${mode === 'simple' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'}`}
+                                >
+                                    <Save size={18} />
+                                    {mode === 'simple' ? 'Guardar Rápido' : 'Guardar Pedido'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             )}
+
+            {/* Modal de Surtido */}
+            <OrderPickingModal 
+                isOpen={isPickingModalOpen}
+                onClose={() => {
+                    setIsPickingModalOpen(false);
+                    setSelectedOrderForPicking(null);
+                }}
+                order={selectedOrderForPicking}
+                onFinish={handleFinishPicking}
+            />
         </div>
     );
 };
 
-const OrderColumn = ({ title, status, icon: Icon, color, headerColor, orders, onMove, onDelete }: any) => {
-    return (
-        <div className={`flex-1 min-w-[300px] flex flex-col rounded-2xl h-full ${color} border bg-opacity-50`}>
-            <div className={`p-4 flex items-center gap-2 font-bold ${headerColor} border-b border-white/50`}>
-                <Icon size={20} />
-                <span>{title}</span>
-                <span className="ml-auto bg-white/50 px-2 py-0.5 rounded-full text-xs">
-                    {orders.length}
-                </span>
-            </div>
-            <div className="flex-1 p-3 overflow-y-auto space-y-3">
-                {orders.map((order: Order) => (
-                    <OrderCard key={order.id} order={order} onMove={onMove} onDelete={onDelete} />
-                ))}
-            </div>
-        </div>
-    );
-};
+interface OrderCardProps {
+    order: Order;
+    status: OrderStatus;
+    onDragStart: (e: React.DragEvent, order: Order) => void;
+    onDragEnd: (e: React.DragEvent) => void;
+    onDelete: (id: string) => void;
+    onStartPicking?: (order: Order) => void;
+    onReady?: () => void;
+    onDeliver?: () => void;
+}
 
-const OrderCard = ({ order, onMove, onDelete }: { order: Order, onMove: any, onDelete: any }) => {
-    const isLate = new Date(order.deliveryDate) < new Date() && order.status !== 'DELIVERED';
-    const percentPaid = Math.min(100, (order.advancePayment / order.total) * 100);
+const OrderCard: React.FC<OrderCardProps> = ({ 
+    order, 
+    status,
+    onDragStart,
+    onDragEnd,
+    onDelete,
+    onStartPicking,
+    onReady,
+    onDeliver
+}) => {
+    const [showActions, setShowActions] = useState(false);
+    const isLate = new Date(order.deliveryDate) < new Date() && status !== 'DELIVERED';
+    const percentPaid = order.total > 0 ? Math.min(100, (order.advancePayment / order.total) * 100) : 0;
     const isHighPriority = order.priority === 'Alta';
 
+    const handleActionButton = () => {
+        switch (status) {
+            case 'PENDING':
+                if (onStartPicking) {
+                    onStartPicking(order);
+                }
+                break;
+            case 'PROCESSING':
+                if (onReady) {
+                    onReady();
+                }
+                break;
+            case 'READY':
+                if (onDeliver) {
+                    onDeliver();
+                }
+                break;
+        }
+    };
+
+    const getActionButtonText = () => {
+        switch (status) {
+            case 'PENDING':
+                return 'Iniciar Surtido';
+            case 'PROCESSING':
+                return 'Marcar Listo';
+            case 'READY':
+                return 'Entregar';
+            default:
+                return 'Acción';
+        }
+    };
+
+    const getActionButtonColor = () => {
+        switch (status) {
+            case 'PENDING':
+                return 'bg-blue-600 hover:bg-blue-700';
+            case 'PROCESSING':
+                return 'bg-purple-600 hover:bg-purple-700';
+            case 'READY':
+                return 'bg-green-600 hover:bg-green-700';
+            default:
+                return 'bg-gray-600 hover:bg-gray-700';
+        }
+    };
+
     return (
-        <div className={`bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition-all group relative ${isHighPriority ? 'border-l-4 border-l-red-500' : 'border-slate-100'}`}>
-            
-            <div className="flex justify-between items-start mb-2">
-                <span className="text-xs font-mono text-slate-400">#{order.id}</span>
-                {isLate && (
-                    <span className="bg-red-100 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                        Atrasado
-                    </span>
-                )}
-                {isHighPriority && !isLate && (
-                    <span className="bg-red-50 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <AlertTriangle size={10} /> Alta Prioridad
-                    </span>
-                )}
-            </div>
-
-            <h4 className="font-bold text-slate-800 mb-1">{order.customerName}</h4>
-            
-            <div className="flex items-center gap-2 text-xs text-slate-500 mb-3">
-                <Calendar size={12} />
-                {new Date(order.deliveryDate).toLocaleDateString()}
-            </div>
-
-            <div className="mb-3">
-                <div className="flex justify-between text-xs mb-1">
-                    <span className="text-slate-500">Pago:</span>
-                    <span className="font-bold text-slate-700">${order.advancePayment} / ${order.total}</span>
+        <div 
+            draggable
+            onDragStart={(e) => onDragStart(e, order)}
+            onDragEnd={onDragEnd}
+            className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-all cursor-move group"
+        >
+            {/* Header del Card */}
+            <div className="p-4">
+                <div className="flex justify-between items-start mb-2">
+                    <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                            <GripVertical size={14} className="text-gray-400 cursor-grab" />
+                            <span className="text-xs font-mono text-gray-400">
+                                #{order.orderFolio || order.id}
+                            </span>
+                        </div>
+                        
+                        {isLate && (
+                            <span className="bg-red-100 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 inline-block">
+                                Atrasado
+                            </span>
+                        )}
+                        {isHighPriority && !isLate && (
+                            <span className="bg-red-50 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 inline-flex items-center gap-1">
+                                <AlertTriangle size={10} /> Alta Prioridad
+                            </span>
+                        )}
+                    </div>
+                    
+                    <div className="flex items-center gap-1">
+                        <button 
+                            onClick={() => setShowActions(!showActions)}
+                            className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                        >
+                            <MoreVertical size={16} />
+                        </button>
+                    </div>
                 </div>
-                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-green-500 rounded-full" style={{ width: `${percentPaid}%` }}></div>
+
+                <h4 className="font-bold text-gray-800 text-lg mb-1">{order.customerName}</h4>
+                
+                <div className="flex items-center gap-2 text-xs text-gray-500 mb-3">
+                    <Calendar size={12} />
+                    {new Date(order.deliveryDate).toLocaleDateString()}
                 </div>
-                {order.balance > 0 && (
-                    <p className="text-[10px] text-red-500 text-right mt-1 font-medium">Deben: ${order.balance.toFixed(2)}</p>
+
+                {/* Barra de Progreso de Pago */}
+                <div className="mb-3">
+                    <div className="flex justify-between text-xs mb-1">
+                        <span className="text-gray-500">Pago:</span>
+                        <span className="font-bold text-gray-700">
+                            ${order.advancePayment} / ${order.total}
+                        </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div 
+                            className="h-full bg-green-500 rounded-full transition-all" 
+                            style={{ width: `${percentPaid}%` }}
+                        ></div>
+                    </div>
+                    {order.balance > 0 && (
+                        <p className="text-[10px] text-red-500 text-right mt-1 font-medium">
+                            Deben: ${order.balance.toFixed(2)}
+                        </p>
+                    )}
+                </div>
+
+                {/* Botones de Acción */}
+                {showActions && (
+                    <div className="flex gap-2 mb-3">
+                        <button 
+                            onClick={() => {
+                                if (window.confirm('¿Estás seguro de eliminar este pedido?')) {
+                                    onDelete(order.id);
+                                }
+                            }}
+                            className="flex-1 py-1.5 bg-red-50 text-red-600 text-xs font-bold rounded-lg hover:bg-red-100 transition-colors"
+                        >
+                            Eliminar
+                        </button>
+                        {status !== 'DELIVERED' && (
+                            <button 
+                                onClick={handleActionButton}
+                                className={`flex-1 py-1.5 text-white text-xs font-bold rounded-lg transition-colors ${getActionButtonColor()}`}
+                            >
+                                {getActionButtonText()}
+                            </button>
+                        )}
+                    </div>
                 )}
             </div>
 
-            <div className="flex justify-between items-center pt-2 border-t border-slate-50">
-                 <button 
-                    onClick={() => onDelete(order.id)}
-                    className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                >
-                    <Trash2 size={16} />
-                 </button>
-
-                 {order.status !== 'DELIVERED' && (
-                     <button 
-                        onClick={() => onMove(order.id, order.status)}
-                        className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
-                     >
-                        Avanzar <MoveRight size={14} />
-                     </button>
-                 )}
-            </div>
+            {/* Indicador de Drag */}
+            <div className="h-1 bg-gradient-to-r from-transparent via-blue-200 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-b-xl"></div>
         </div>
     );
 };

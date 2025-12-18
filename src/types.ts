@@ -1,8 +1,9 @@
+// src/types.ts
+
 // ==========================================
-// CONSTANTES Y TIPOS MODERNOS (Patrón as const)
+// 1. CONSTANTES Y NAVEGACIÓN (ViewState)
 // ==========================================
 
-// 1. Categorías de Productos
 export const ProductCategory = {
   ELECTRONICS: 'Electrónica',
   CLOTHING: 'Ropa',
@@ -13,15 +14,16 @@ export const ProductCategory = {
 
 export type ProductCategory = typeof ProductCategory[keyof typeof ProductCategory];
 
-// 2. Estado de Navegación Global (La joya de la corona)
-// Esto reemplaza a tu antiguo Enum.
+// Estado de Navegación Global
 export const ViewState = {
-  // Módulos Principales
+  // --- MÓDULOS PRINCIPALES ---
   DASHBOARD: 'DASHBOARD',
   POS: 'POS',
   INVENTORY: 'INVENTORY',
   SALES: 'SALES',
   REPORTS: 'REPORTS',
+
+  // --- INVENTARIOS (Sub-módulos) ---
   INVENTORY_MOVEMENTS: 'INVENTORY_MOVEMENTS',
   INVENTORY_AUDIT: 'INVENTORY_AUDIT',
   INVENTORY_ENTRIES: 'INVENTORY_ENTRIES',
@@ -32,43 +34,43 @@ export const ViewState = {
   INVENTORY_WAREHOUSES: 'INVENTORY_WAREHOUSES',
   INVENTORY_MIN_STOCK: 'INVENTORY_MIN_STOCK',
 
-
-  
-  // Clientes
+  // --- CLIENTES Y VENTAS ---
   CLIENTS_DASHBOARD: 'CLIENTS_DASHBOARD',
   CLIENTS_CATALOG: 'CLIENTS_CATALOG',
   PENDING_SALES: 'PENDING_SALES',
-  ACCOUNTS_RECEIVABLE: 'ACCOUNTS_RECEIVABLE',
+  ACCOUNTS_RECEIVABLE: 'ACCOUNTS_RECEIVABLE', // Cuentas por Cobrar
   POS_RETURNS: 'POS_RETURNS',
+  ORDERS: 'ORDERS',
+  ROUTE_SALES: 'ROUTE_SALES',
+  SALES_CALENDAR: 'SALES_CALENDAR', // Agenda de Entregas
 
-  // Logística y Compras (Nuevos)
-  PURCHASES: 'PURCHASES',             // Historial de Facturas
+  // --- COMPRAS Y PROVEEDORES ---
+  PURCHASES: 'PURCHASES',             // Historial Compras
   PURCHASE_ORDERS: 'PURCHASE_ORDERS', // Órdenes de Compra
-  SUPPLIERS: 'SUPPLIERS',             // Directorio de Proveedores
-  CALENDAR: 'CALENDAR',               // Agenda Logística
-  ORDERS: 'ORDERS',                   // Pedidos de Clientes
-  ROUTE_SALES: 'ROUTE_SALES',         // Rutas de Reparto
+  SUPPLIERS: 'SUPPLIERS',             // Directorio
+  PURCHASE_CALENDAR: 'PURCHASE_CALENDAR', // Agenda de Recepción
 
-  // Configuración
+  // --- CONTABILIDAD Y FINANZAS ---
+  ACCOUNTS_PAYABLE: 'ACCOUNTS_PAYABLE',   // Cuentas por Pagar
+  FINANCE_CALENDAR: 'FINANCE_CALENDAR',   // Agenda Financiera
+
+  // --- CONFIGURACIÓN ---
   SETTINGS: 'SETTINGS',
   CONF_HARDWARE: 'CONF_HARDWARE',
   CONF_TAXES: 'CONF_TAXES',
   CONF_USERS: 'CONF_USERS',
-  CONF_DATABASE: 'CONF_DATABASE'
+  CONF_DATABASE: 'CONF_DATABASE',
+
+  // Alias Legacy (por compatibilidad si algo lo usa)
+  CALENDAR: 'PURCHASE_CALENDAR' 
 } as const;
 
-// Esto extrae el tipo automáticamente: 'DASHBOARD' | 'POS' | 'INVENTORY' ...
 export type ViewState = typeof ViewState[keyof typeof ViewState];
 
 
 // ==========================================
-// INTERFACES DE BASE DE DATOS (Supabase)
+// 2. INTERFACES DE PRODUCTOS Y VENTAS
 // ==========================================
-
-// Tipos simples para estados (Strings directos de la DB)
-export type OrderStatus = 'PENDING' | 'PROCESSING' | 'READY' | 'DELIVERED' | 'CANCELLED';
-export type PurchaseStatus = 'DRAFT' | 'ORDERED' | 'RECEIVED' | 'CANCELLED';
-export type PaymentStatus = 'PENDING' | 'PARTIAL' | 'PAID';
 
 export interface ProductPresentation {
   id: string;
@@ -85,7 +87,7 @@ export interface Product {
   category: string;
   stock: number;
   sku: string;
-  image?: string;
+  image?: string | null;
   barcode?: string;
   manufacturerCode?: string;
   shortDescription?: string;
@@ -96,6 +98,7 @@ export interface Product {
   promotionalPrice?: number;
   taxRate?: number;
   minStock?: number;
+  
   // Mayoreo y Presentaciones
   groupId?: string;
   wholesalePrice?: number;
@@ -106,6 +109,7 @@ export interface Product {
   packBarcode?: string;
   shortCode?: string;
   presentations?: ProductPresentation[];
+  
   // Contenido
   contentPerUnit?: number;
   contentUnitPrice?: number;
@@ -168,6 +172,10 @@ export interface PendingSale {
   created_by?: string;
 }
 
+// ==========================================
+// 3. INTERFACES DE CLIENTES Y RUTAS
+// ==========================================
+
 export interface Client {
   id: string;
   name: string;
@@ -181,6 +189,8 @@ export interface Client {
   tags: string[];
   since: string;
 }
+
+export type OrderStatus = 'PENDING' | 'PROCESSING' | 'READY' | 'DELIVERED' | 'CANCELLED';
 
 export interface Order {
   id: string;
@@ -221,6 +231,81 @@ export interface Route {
   stops?: RouteStop[];
 }
 
+// ==========================================
+// 4. INTERFACES DE COMPRAS Y PROVEEDORES
+// ==========================================
+
+export type PurchaseStatus = 'DRAFT' | 'ORDERED' | 'RECEIVED' | 'CANCELLED';
+export type PaymentStatus = 'PENDING' | 'PARTIAL' | 'PAID';
+
+export interface Supplier {
+  id: string;
+  name: string;
+  contact_name?: string; // Corregido para coincidir con DB
+  email: string;
+  phone?: string;
+  address?: string;
+  tax_id?: string;
+  category: string;
+  status: 'Active' | 'Inactive';
+  credit_days?: number;
+}
+
+export interface Purchase {
+  id: string;
+  orderId?: string;
+  invoiceNumber: string;
+  supplierName?: string;
+  date: string;
+  total: number;
+  status?: PurchaseStatus;
+  payment_due_date?: string;
+  amount_paid?: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  date: string;
+  amount: number;
+  status: PurchaseStatus;
+  items: string[]; 
+  expected_delivery_date?: string;
+}
+
+// ==========================================
+// 5. CALENDARIO Y DASHBOARD
+// ==========================================
+
+// Esta es la interfaz definitiva para los 3 calendarios
+export interface CalendarEvent {
+  event_id: string;
+  // Tipos de todos los módulos
+  type: 'delivery' | 'payment' | 'meeting' | 'reminder' | 'shipping' | 'payable' | 'receivable' | 'expense';
+  title: string;
+  start_date: string; 
+  amount: number;
+  supplier_id?: string;
+}
+
+export interface StatMetric {
+  label: string;
+  value: string | number;
+  highlight?: boolean; 
+  color?: string; 
+}
+
+export interface DashboardCardProps {
+  title: string;
+  icon: React.ReactNode;
+  metrics: StatMetric[];
+}
+
+// ==========================================
+// 6. CONFIGURACIÓN DEL SISTEMA
+// ==========================================
+
 export interface User {
   id: string;
   fullName: string;
@@ -247,59 +332,4 @@ export interface Tax {
   rate: number;
   code?: string;
   isActive: boolean;
-}
-
-// --- MÓDULO DE COMPRAS Y PROVEEDORES ---
-
-export interface Supplier {
-  id: string;
-  name: string;
-  contact: string;
-  email: string;
-  phone?: string;
-  address?: string;
-  tax_id?: string;
-  category: string;
-  status: 'Active' | 'Inactive';
-}
-
-export interface Purchase {
-  id: string;
-  orderId?: string;       // order_reference en DB
-  invoiceNumber: string;
-  supplierName?: string;
-  date: string;
-  total: number;
-  status?: PurchaseStatus;
-}
-
-export interface PurchaseOrder {
-  id: string;
-  supplierId: string;
-  supplierName: string;
-  date: string;
-  amount: number;
-  status: PurchaseStatus;
-  items: string[]; // IDs o descripción breve
-}
-
-export interface CalendarEvent {
-  id: string;
-  title: string;
-  date: string;
-  type: 'Delivery' | 'Payment' | 'Meeting';
-}
-
-
-export interface StatMetric {
-  label: string;
-  value: string | number;
-  highlight?: boolean; // blue color
-  color?: string; // specific text color class
-}
-
-export interface DashboardCardProps {
-  title: string;
-  icon: React.ReactNode;
-  metrics: StatMetric[];
 }

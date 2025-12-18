@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DatabaseProvider, useDatabase } from './context/DatabaseContext';
 import { Header } from './components/Header';
 
-// Páginas existentes
+// --- PÁGINAS ---
 import { Dashboard } from './pages/Dashboard';
 import { PosTerminal } from './pages/PosTerminal';
 import { Inventory } from './pages/Inventory';
@@ -20,22 +20,21 @@ import { ClientsCatalog } from './pages/ClientsCatalog';
 import { TaxSettings } from './pages/TaxSettings';
 import { HardwareSettings } from './pages/HardwareSettings';
 import { UsersSettings } from './pages/UsersSettings';
-
-// Módulo de Compras
-import PurchaseOrders from './components/PurchaseOrders';
-import Purchases from "./pages/Purchases"
-import CalendarView from './components/CalendarView';
-
-// Inventarios nuevos
+import { SuppliersDashboard } from './pages/SuppliersDashboard';
+import Purchases from "./pages/Purchases";
 import InventoryMovements from './pages/InventoryMovements';
 
-// Utilerías y Tipos
+// --- COMPONENTES AUXILIARES ---
+import PurchaseOrders from './components/PurchaseOrders';
+import { CalendarWidget } from './components/CalendarWidget'; // <--- IMPORTANTE
+
+// --- UTILERÍAS ---
 import { ViewState } from './types';
 import { validateLicense } from './services/licenseService';
 
 
 // ==========================
-//   SISTEMA INTERNO
+//   CONTENIDO DEL SISTEMA
 // ==========================
 const AppContent = () => {
   const { currentUser } = useDatabase();
@@ -65,6 +64,20 @@ const AppContent = () => {
         return <RouteSales setView={setCurrentView} />;
       case ViewState.SALES:
         return <SalesHistory />;
+      
+      // CALENDARIO DE VENTAS (Entregas)
+      case ViewState.SALES_CALENDAR:
+        return (
+          <div className="h-full p-6 flex flex-col animate-fade-in bg-slate-50">
+             <div className="mb-4">
+                <h1 className="text-2xl font-bold text-blue-900">Agenda de Entregas</h1>
+                <p className="text-slate-500 text-sm">Logística de pedidos a clientes.</p>
+             </div>
+             <div className="flex-1">
+                <CalendarWidget mode="SALES" />
+             </div>
+          </div>
+        );
 
       // --- CLIENTES ---
       case ViewState.CLIENTS_DASHBOARD:
@@ -75,10 +88,8 @@ const AppContent = () => {
       // --- INVENTARIOS ---
       case ViewState.INVENTORY:
         return <Inventory setView={setCurrentView} />;
-
       case ViewState.INVENTORY_MOVEMENTS:
         return <InventoryMovements setView={setCurrentView} />;
-
       case ViewState.INVENTORY_AUDIT:
         return (
           <div className="p-10 text-center text-xl text-slate-600">
@@ -86,21 +97,56 @@ const AppContent = () => {
           </div>
         );
 
-      // --- CONTABILIDAD ---
-      case ViewState.ACCOUNTS_RECEIVABLE:
-        return <AccountsReceivable setView={setCurrentView} />;
-
-      // --- COMPRAS ---
+      // --- COMPRAS Y PROVEEDORES ---
+      case ViewState.SUPPLIERS:
+        return <SuppliersDashboard />;
       case ViewState.PURCHASE_ORDERS:
         return <PurchaseOrders setView={setCurrentView} />;
       case ViewState.PURCHASES:
         return <Purchases setView={setCurrentView} />;
-      //case ViewState.PURCHASE_HISTORY:
-        return <Purchases setView={setCurrentView} />;
+      
+      // CALENDARIO DE COMPRAS (Recepciones)
+      case ViewState.PURCHASE_CALENDAR: // También cubre 'CALENDAR' legacy
       case ViewState.CALENDAR:
-        return <CalendarView setView={setCurrentView} />;
+        return (
+          <div className="h-full p-6 flex flex-col animate-fade-in bg-slate-50">
+             <div className="mb-4">
+                <h1 className="text-2xl font-bold text-emerald-900">Agenda de Recepción</h1>
+                <p className="text-slate-500 text-sm">Programación de llegada de mercancía de proveedores.</p>
+             </div>
+             <div className="flex-1">
+                <CalendarWidget mode="PURCHASES" />
+             </div>
+          </div>
+        );
 
-      // --- GESTIÓN ---
+      // --- CONTABILIDAD Y FINANZAS ---
+      case ViewState.ACCOUNTS_RECEIVABLE:
+        return <AccountsReceivable setView={setCurrentView} />;
+
+      case ViewState.ACCOUNTS_PAYABLE:
+        return (
+            <div className="p-10 text-center text-slate-500 bg-slate-50 h-full flex items-center justify-center flex-col">
+                <h2 className="text-2xl font-bold text-slate-700 mb-2">Módulo de Cuentas por Pagar</h2>
+                <p>En construcción... (Aquí verás la lista de facturas pendientes de pago)</p>
+            </div>
+        );
+
+      // CALENDARIO FINANCIERO (Flujo de Caja)
+      case ViewState.FINANCE_CALENDAR:
+         return (
+          <div className="h-full p-6 flex flex-col animate-fade-in bg-slate-50">
+             <div className="mb-4">
+                <h1 className="text-2xl font-bold text-purple-900">Agenda Financiera</h1>
+                <p className="text-slate-500 text-sm">Flujo de caja, vencimientos de facturas y gastos operativos.</p>
+             </div>
+             <div className="flex-1">
+                <CalendarWidget mode="FINANCE" />
+             </div>
+          </div>
+        );
+
+      // --- REPORTES ---
       case ViewState.REPORTS:
         return <Reports onBack={() => setCurrentView(ViewState.DASHBOARD)} />;
 
@@ -113,6 +159,8 @@ const AppContent = () => {
         return <TaxSettings setView={setCurrentView} />;
       case ViewState.CONF_USERS:
         return <UsersSettings setView={setCurrentView} />;
+      case ViewState.CONF_DATABASE:
+        return <div className="p-8 text-center text-slate-500">Configuración de Base de Datos</div>;
 
       default:
         return <Dashboard setView={setCurrentView} />;
@@ -131,7 +179,7 @@ const AppContent = () => {
 
 
 // ==========================
-//   APP PRINCIPAL
+//   APP PRINCIPAL (Licencia)
 // ==========================
 function App() {
   const [isLicensed, setIsLicensed] = useState<boolean>(false);
@@ -144,7 +192,6 @@ function App() {
       if (savedKey) {
         try {
           const result = await validateLicense(savedKey);
-
           if (result.isValid) {
             setIsLicensed(true);
           } else {
@@ -157,7 +204,6 @@ function App() {
           setIsLicensed(false);
         }
       }
-
       setIsCheckingLicense(false);
     };
 

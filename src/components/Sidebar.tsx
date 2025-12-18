@@ -6,8 +6,9 @@ import {
   History, 
   Settings, 
   LogOut, 
-  Users,       // Icono para Clientes
-  Wallet       // Icono para Créditos/Cobranza
+  Users,       
+  Wallet,
+  Truck // <--- 1. IMPORTA EL ICONO NUEVO
 } from 'lucide-react';
 import { ViewState } from '../types';
 import { useDatabase } from '../context/DatabaseContext';
@@ -24,11 +25,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
     { id: 'DASHBOARD', label: 'Inicio', icon: LayoutDashboard },
     { id: 'POS', label: 'Terminal PV', icon: ShoppingCart },
     { id: 'INVENTORY', label: 'Inventario', icon: Package },
+    
+    // --- NUEVO MÓDULO ---
+    { id: 'SUPPLIERS', label: 'Proveedores', icon: Truck }, // <--- 2. AGREGA ESTA LÍNEA
+    // -------------------
+
     { id: 'SALES', label: 'Historial Ventas', icon: History },
-    // --- NUEVOS MÓDULOS ---
     { id: 'CLIENTS_DASHBOARD', label: 'Clientes', icon: Users },
     { id: 'ACCOUNTS_RECEIVABLE', label: 'Créditos y Cobros', icon: Wallet },
-    // ----------------------
     { id: 'SETTINGS', label: 'Configuración', icon: Settings },
   ];
 
@@ -42,6 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
         {menuItems.map((item) => {
           const Icon = item.icon;
+          // Aseguramos que el ID coincida con el tipo ViewState
           const isActive = currentView === item.id;
           return (
             <button
