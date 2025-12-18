@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 import { User, Lock, Scan, Keyboard, Delete, LogIn, Eye, EyeOff, Loader2 } from 'lucide-react';
 
+// Importa tu logo localmente - AJUSTA LA RUTA SEGÚN DONDE ESTÉ TU LOGO
+import logoImage from '../assets/images/logo.png';
+
 export const Login: React.FC = () => {
   const { login } = useDatabase();
   const [activeTab, setActiveTab] = useState<'pin' | 'password' | 'barcode'>('pin');
@@ -60,10 +63,9 @@ export const Login: React.FC = () => {
           if (method === 'pin') setPin('');
           if (method === 'barcode') setBarcodeInput('');
       }
-      // If success, the App component will re-render and remove the Login screen automatically
   };
 
-  // Barcode Listener (Simple implementation)
+  // Barcode Listener
   const handleBarcodeSubmit = (e: React.FormEvent) => {
       e.preventDefault();
       if (barcodeInput) attemptLogin('barcode', barcodeInput);
@@ -88,11 +90,15 @@ export const Login: React.FC = () => {
                 </div>
 
                 <div className="relative z-10 flex flex-col items-center">
-                    <img 
-                        src="https://i.ibb.co/60yCC57/Whats-App-Image-2025-02-12-at-12-32-47-PM-removebg-preview.png" 
-                        alt="CGSystem Logo" 
-                        className="w-72 h-72 object-contain drop-shadow-2xl mb-8 hover:scale-105 transition-transform duration-700"
-                    />
+                    {/* Logo - Reemplazado por imagen local */}
+                    <div className="w-80 h-80 mb-8 flex items-center justify-center">
+                        <img 
+                            src={logoImage}
+                            alt="CGSystem Logo" 
+                            className="w-full h-full object-contain drop-shadow-2xl hover:scale-105 transition-transform duration-700"
+                        />
+                    </div>
+                    
                     <h1 className="text-7xl font-bold text-white tracking-tighter mb-4">
                         CG<span className="font-light text-slate-300">System</span>
                     </h1>
@@ -111,22 +117,42 @@ export const Login: React.FC = () => {
                 
                 {/* Mobile Header with Logo */}
                 <div className="md:hidden flex flex-col items-center mb-8">
-                    <img 
-                        src="https://i.ibb.co/60yCC57/Whats-App-Image-2025-02-12-at-12-32-47-PM-removebg-preview.png" 
-                        alt="CGSystem Logo" 
-                        className="w-24 h-24 object-contain mb-2 drop-shadow-lg"
-                    />
+                    <div className="w-48 h-48 mb-4 flex items-center justify-center">
+                        <img 
+                            src={logoImage}
+                            alt="CGSystem Logo" 
+                            className="w-full h-full object-contain drop-shadow-lg"
+                        />
+                    </div>
                     <h1 className="text-3xl font-bold text-white">CGSystem</h1>
                 </div>
 
+                {/* Tab Navigation */}
                 <div className="flex justify-center mb-10 bg-slate-800/50 p-1.5 rounded-2xl w-fit mx-auto backdrop-blur-md shadow-inner">
-                    <TabButton active={activeTab === 'pin'} onClick={() => setActiveTab('pin')} icon={Lock} label="PIN" />
-                    <TabButton active={activeTab === 'password'} onClick={() => setActiveTab('password')} icon={Keyboard} label="Contraseña" />
-                    <TabButton active={activeTab === 'barcode'} onClick={() => setActiveTab('barcode')} icon={Scan} label="Tarjeta" />
+                    <TabButton 
+                        active={activeTab === 'pin'} 
+                        onClick={() => setActiveTab('pin')} 
+                        icon={Lock} 
+                        label="PIN" 
+                    />
+                    <TabButton 
+                        active={activeTab === 'password'} 
+                        onClick={() => setActiveTab('password')} 
+                        icon={Keyboard} 
+                        label="Contraseña" 
+                    />
+                    <TabButton 
+                        active={activeTab === 'barcode'} 
+                        onClick={() => setActiveTab('barcode')} 
+                        icon={Scan} 
+                        label="Tarjeta" 
+                    />
                 </div>
 
+                {/* Login Forms */}
                 <div className="flex-1 flex flex-col justify-center max-w-sm mx-auto w-full">
                     
+                    {/* Error Message */}
                     {error && (
                         <div className="mb-6 bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-xl text-center text-sm animate-fade-in flex items-center justify-center gap-2">
                             <span className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></span>
@@ -134,17 +160,25 @@ export const Login: React.FC = () => {
                         </div>
                     )}
 
+                    {/* PIN Login */}
                     {activeTab === 'pin' && (
                         <div className="animate-fade-in flex flex-col items-center">
                             <h2 className="text-2xl font-bold text-white mb-8">Ingrese su PIN</h2>
                             <div className="flex gap-5 mb-10">
                                 {[0, 1, 2, 3].map(i => (
-                                    <div key={i} className={`w-4 h-4 rounded-full transition-all duration-300 ${pin.length > i ? 'bg-blue-500 scale-125 shadow-[0_0_15px_#3b82f6]' : 'bg-slate-700'}`}></div>
+                                    <div 
+                                        key={i} 
+                                        className={`w-4 h-4 rounded-full transition-all duration-300 ${pin.length > i ? 'bg-blue-500 scale-125 shadow-[0_0_15px_#3b82f6]' : 'bg-slate-700'}`}
+                                    ></div>
                                 ))}
                             </div>
                             <div className="grid grid-cols-3 gap-5 w-full">
                                 {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
-                                    <PinButton key={num} num={num.toString()} onClick={() => handlePinClick(num.toString())} />
+                                    <PinButton 
+                                        key={num} 
+                                        num={num.toString()} 
+                                        onClick={() => handlePinClick(num.toString())} 
+                                    />
                                 ))}
                                 <div className="flex items-center justify-center"></div>
                                 <PinButton num="0" onClick={() => handlePinClick('0')} />
@@ -158,52 +192,61 @@ export const Login: React.FC = () => {
                         </div>
                     )}
 
+                    {/* Password Login */}
                     {activeTab === 'password' && (
                         <div className="animate-fade-in space-y-6">
-                             <h2 className="text-2xl font-bold text-white mb-4 text-center">Acceso Administrativo</h2>
-                             <div>
-                                 <label className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2 block">Usuario</label>
-                                 <div className="relative group">
-                                     <User className="absolute left-4 top-3.5 text-slate-500 group-focus-within:text-blue-400 transition-colors" size={20} />
-                                     <input 
+                            <h2 className="text-2xl font-bold text-white mb-4 text-center">Acceso Administrativo</h2>
+                            
+                            <div>
+                                <label className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2 block">
+                                    Usuario
+                                </label>
+                                <div className="relative group">
+                                    <User className="absolute left-4 top-3.5 text-slate-500 group-focus-within:text-blue-400 transition-colors" size={20} />
+                                    <input 
                                         type="text" 
                                         className="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-slate-600"
                                         placeholder="Ingrese usuario"
                                         value={username}
                                         onChange={e => setUsername(e.target.value)}
-                                     />
-                                 </div>
-                             </div>
-                             <div>
-                                 <label className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2 block">Contraseña</label>
-                                 <div className="relative group">
-                                     <Lock className="absolute left-4 top-3.5 text-slate-500 group-focus-within:text-blue-400 transition-colors" size={20} />
-                                     <input 
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2 block">
+                                    Contraseña
+                                </label>
+                                <div className="relative group">
+                                    <Lock className="absolute left-4 top-3.5 text-slate-500 group-focus-within:text-blue-400 transition-colors" size={20} />
+                                    <input 
                                         type={showPassword ? "text" : "password"} 
                                         className="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-12 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-slate-600"
                                         placeholder="Ingrese contraseña"
                                         value={password}
                                         onChange={e => setPassword(e.target.value)}
-                                     />
-                                     <button 
+                                    />
+                                    <button 
                                         onClick={() => setShowPassword(!showPassword)}
                                         className="absolute right-4 top-3.5 text-slate-500 hover:text-white transition-colors"
-                                     >
-                                         {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                                     </button>
-                                 </div>
-                             </div>
-                             <button 
+                                    >
+                                        {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <button 
                                 disabled={isLoading || !username || !password}
                                 onClick={() => attemptLogin('password', '')}
                                 className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-4"
-                             >
-                                 {isLoading ? <Loader2 className="animate-spin" /> : <LogIn size={20} />}
-                                 <span>Iniciar Sesión</span>
-                             </button>
+                            >
+                                {isLoading ? <Loader2 className="animate-spin" /> : <LogIn size={20} />}
+                                <span>Iniciar Sesión</span>
+                            </button>
                         </div>
                     )}
 
+                    {/* Barcode Login */}
                     {activeTab === 'barcode' && (
                         <div className="animate-fade-in flex flex-col items-center justify-center text-center h-full py-10">
                             <div className="w-40 h-40 bg-slate-800/50 rounded-full flex items-center justify-center mb-8 border-2 border-dashed border-slate-600 relative group">
@@ -227,7 +270,6 @@ export const Login: React.FC = () => {
                             </form>
                         </div>
                     )}
-
                 </div>
             </div>
         </div>
@@ -235,7 +277,15 @@ export const Login: React.FC = () => {
   );
 };
 
-const TabButton = ({ active, onClick, icon: Icon, label }: any) => (
+// Componente para los botones de pestañas
+interface TabButtonProps {
+    active: boolean;
+    onClick: () => void;
+    icon: React.ElementType;
+    label: string;
+}
+
+const TabButton: React.FC<TabButtonProps> = ({ active, onClick, icon: Icon, label }) => (
     <button 
         onClick={onClick}
         className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${active ? 'bg-slate-700 text-white shadow-lg ring-1 ring-white/10' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
@@ -245,7 +295,13 @@ const TabButton = ({ active, onClick, icon: Icon, label }: any) => (
     </button>
 );
 
-const PinButton = ({ num, onClick }: any) => (
+// Componente para los botones del PIN
+interface PinButtonProps {
+    num: string;
+    onClick: () => void;
+}
+
+const PinButton: React.FC<PinButtonProps> = ({ num, onClick }) => (
     <button 
         onClick={onClick}
         className="h-16 w-full rounded-2xl bg-slate-800/50 hover:bg-slate-700 text-white text-2xl font-bold border border-white/5 shadow-sm hover:shadow-md transition-all active:scale-95 active:bg-slate-600"
