@@ -1,206 +1,136 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
-  ShoppingCart, 
-  ClipboardList, 
-  ShoppingBag, 
-  Truck, 
-  Users, 
-  RotateCcw, 
-  FileText, 
-  CalendarDays, 
-  Receipt, 
-  Banknote, 
-  Package, 
-  ArrowRightLeft, 
-  BarChart3, 
-  Tag, 
-  Store, 
-  PieChart,
-  Wallet,
-  Megaphone,
-  Gift, 
-  Percent,
-  Crown,
-  Clock,
-  BadgeDollarSign,
-  Target,
-  Printer,
-  FileSpreadsheet,
-  Database,
-  UserCog,
-  Globe,
-  Smartphone,
-  Wifi,
-  RefreshCw,
-  BoxesIcon
+  ShoppingCart, FileText, ShoppingBag, Truck, Users, History, Calendar, 
+  ClipboardList, Wallet, Settings, Package, BarChart2, Tag, Layers, 
+  Globe, CreditCard, Gift, Percent, Crown, Megaphone, UserCheck, 
+  Clock, Target, Wifi, Smartphone, RefreshCw, Database, Printer, FileDigit,
+  DollarSign 
 } from 'lucide-react';
-
 import { ViewState } from '../types';
+import { ShiftManager } from '../components/ShiftManager';
 
 interface DashboardProps {
   setView: (view: ViewState) => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ setView }) => {
+  // Estado para controlar la ventana de Turnos (Corte X/Z)
+  const [isShiftManagerOpen, setIsShiftManagerOpen] = useState(false);
 
-  const handleNavigation = (target: ViewState | 'COMING_SOON') => {
-    if (target === 'COMING_SOON') {
-      alert("Esta funcionalidad estará disponible pronto.");
-    } else {
-      setView(target);
-    }
-  };
+  // Componente de Botón (Compacto)
+  const MenuOption = ({ icon: Icon, label, onClick }: any) => (
+    <button 
+      onClick={onClick}
+      className="flex flex-col items-center justify-start p-2 rounded-lg hover:bg-slate-50 transition-all duration-200 group w-full"
+    >
+      <div className="p-2.5 rounded-xl bg-slate-50 text-slate-600 mb-1.5 group-hover:bg-white group-hover:text-blue-600 group-hover:shadow-sm border border-transparent group-hover:border-slate-100 transition-all">
+        <Icon size={20} strokeWidth={1.5} />
+      </div>
+      <span className="text-xs font-medium text-slate-600 text-center leading-tight group-hover:text-slate-900">
+        {label}
+      </span>
+    </button>
+  );
+
+  // Componente de Tarjeta
+  const DashboardCard = ({ title, headerColor, children }: any) => (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full hover:shadow-md transition-shadow duration-300">
+      <div className={`${headerColor} px-4 py-3 border-b border-white/10`}>
+        <h3 className="font-bold text-white text-sm tracking-wide">{title}</h3>
+      </div>
+      <div className="p-3 grid grid-cols-2 gap-x-2 gap-y-1 content-start flex-1">
+        {children}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="p-8 animate-fade-in max-w-[1920px] mx-auto bg-slate-50 min-h-screen">
+    <div className="w-full pb-32 animate-fade-in">
+      
+      {/* MODAL DE GESTIÓN DE TURNOS (Invisible hasta que se activa) */}
+      <ShiftManager 
+         isOpen={isShiftManagerOpen} 
+         onClose={() => setIsShiftManagerOpen(false)} 
+      />
 
-      {/* GRID LAYOUT */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* Grid Principal */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
 
-        {/* --- VENTAS --- */}
-        <MenuSection 
-          title="Ventas" 
-          gradient="bg-gradient-to-r from-blue-600 to-blue-400"
-          items={[
-            { label: 'Punto de Venta', icon: ShoppingCart, action: () => handleNavigation('POS') },
-            { label: 'Presupuestos', icon: ClipboardList, action: () => handleNavigation('PENDING_SALES') },
-            { label: 'Pedidos', icon: ShoppingBag, action: () => handleNavigation('ORDERS') },
-            { label: 'Venta en Ruta', icon: Truck, action: () => handleNavigation('ROUTE_SALES') },
-            { label: 'Clientes', icon: Users, action: () => handleNavigation('CLIENTS_DASHBOARD') },
-            { label: 'Historial', icon: RotateCcw, action: () => handleNavigation('SALES') },
-          ]}
-        />
+        {/* 1. VENTAS (Azul) */}
+        <DashboardCard title="Ventas" headerColor="bg-blue-500">
+          <MenuOption icon={ShoppingCart} label="Punto de Venta" onClick={() => setView(ViewState.POS)} />
+          <MenuOption icon={FileText} label="Presupuestos" onClick={() => console.log('Presupuestos')} />
+          <MenuOption icon={ShoppingBag} label="Pedidos" onClick={() => setView(ViewState.ORDERS)} />
+          <MenuOption icon={Truck} label="Venta en Ruta" onClick={() => setView(ViewState.ROUTE_SALES)} />
+          <MenuOption icon={Users} label="Clientes" onClick={() => setView(ViewState.CLIENTS_DASHBOARD)} />
+          <MenuOption icon={History} label="Historial" onClick={() => setView(ViewState.SALES)} />
+          <MenuOption icon={Calendar} label="Agenda Entregas" onClick={() => setView(ViewState.SALES_CALENDAR)} />
+        </DashboardCard>
 
-        {/* --- COMPRAS --- */}
-        <MenuSection 
-          title="Compras" 
-          gradient="bg-gradient-to-r from-emerald-600 to-emerald-400"
-          items={[
-            { label: 'Órdenes de Compra', icon: ClipboardList, action: () => handleNavigation('PURCHASE_ORDERS') },
-            { label: 'Compras', icon: ShoppingBag, action: () => handleNavigation('PURCHASES') },
-            { label: 'Proveedores', icon: Users, action: () => handleNavigation('SUPPLIERS') },
-            { label: 'Calendario', icon: CalendarDays, action: () => handleNavigation('CALENDAR') },
-          ]}
-        />
+        {/* 2. COMPRAS (Verde) */}
+        <DashboardCard title="Compras" headerColor="bg-emerald-500">
+          <MenuOption icon={ClipboardList} label="Órdenes Compra" onClick={() => setView(ViewState.PURCHASE_ORDERS)} />
+          <MenuOption icon={ShoppingBag} label="Compras" onClick={() => setView(ViewState.PURCHASES)} />
+          <MenuOption icon={Users} label="Proveedores" onClick={() => setView(ViewState.SUPPLIERS)} />
+          <MenuOption icon={Truck} label="Agenda Recepción" onClick={() => setView(ViewState.PURCHASE_CALENDAR)} />
+        </DashboardCard>
 
-        {/* --- CONTABILIDAD --- */}
-        <MenuSection 
-          title="Contabilidad" 
-          gradient="bg-gradient-to-r from-purple-600 to-purple-400"
-          items={[
-            { label: 'Facturas', icon: FileText, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Recibos', icon: Receipt, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Gastos', icon: Banknote, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Cobranza', icon: Wallet, action: () => handleNavigation('ACCOUNTS_RECEIVABLE') },
-          ]}
-        />
+        {/* 3. CONTABILIDAD (Morado) */}
+        <DashboardCard title="Contabilidad" headerColor="bg-purple-500">
+          <MenuOption icon={FileDigit} label="Facturas" onClick={() => console.log('Facturas')} />
+          <MenuOption icon={Wallet} label="Gastos" onClick={() => console.log('Gastos')} />
+          <MenuOption icon={CreditCard} label="Ctas. por Pagar" onClick={() => setView(ViewState.ACCOUNTS_PAYABLE)} />
+          <MenuOption icon={Wallet} label="Ctas. por Cobrar" onClick={() => setView(ViewState.ACCOUNTS_RECEIVABLE)} />
+          <MenuOption icon={Calendar} label="Agenda Financiera" onClick={() => setView(ViewState.FINANCE_CALENDAR)} />
+        </DashboardCard>
 
-        {/* --- INVENTARIOS --- */}
-        <MenuSection 
-          title="Inventarios" 
-          gradient="bg-gradient-to-r from-amber-600 to-amber-400"
-          items={[
-            { label: 'Catálogo Productos', icon: Package, action: () => handleNavigation(ViewState.INVENTORY) },
+        {/* 4. INVENTARIOS (Naranja/Amarillo) */}
+        <DashboardCard title="Inventarios" headerColor="bg-amber-500">
+          <MenuOption icon={Package} label="Catálogo Productos" onClick={() => setView(ViewState.INVENTORY)} />
+          <MenuOption icon={RefreshCw} label="Movimientos" onClick={() => setView(ViewState.INVENTORY_MOVEMENTS)} />
+          <MenuOption icon={BarChart2} label="Auditoría" onClick={() => setView(ViewState.INVENTORY_AUDIT)} />
+          <MenuOption icon={Tag} label="Etiquetas" onClick={() => console.log('Etiquetas')} />
+          <MenuOption icon={Layers} label="Sucursales" onClick={() => console.log('Sucursales')} />
+          <MenuOption icon={Package} label="Stock Mínimo" onClick={() => console.log('Stock')} />
+        </DashboardCard>
 
-            // Movimientos combinados (si lo usas)
-            { label: 'Movimientos', icon: ArrowRightLeft, action: () => handleNavigation(ViewState.INVENTORY_MOVEMENTS) },
+        {/* 5. MARKETING (Rosa) */}
+        <DashboardCard title="Marketing y Lealtad" headerColor="bg-pink-500">
+          <MenuOption icon={Megaphone} label="Promociones" onClick={() => console.log('Promociones')} />
+          <MenuOption icon={Gift} label="Puntos" onClick={() => console.log('Puntos')} />
+          <MenuOption icon={Percent} label="Descuentos" onClick={() => console.log('Descuentos')} />
+          <MenuOption icon={Crown} label="Clientes VIP" onClick={() => console.log('VIP')} />
+        </DashboardCard>
 
-            { label: 'Auditoría', icon: BarChart3, action: () => handleNavigation(ViewState.INVENTORY_AUDIT) },
-            { label: 'Etiquetas', icon: Tag, action: () => handleNavigation(ViewState.INVENTORY_LABELS) },
-            { label: 'Sucursales', icon: Store, action: () => handleNavigation(ViewState.INVENTORY_BRANCHES) },
+        {/* 6. GESTIÓN DEL NEGOCIO (Cyan) */}
+        <DashboardCard title="Gestión del Negocio" headerColor="bg-cyan-500">
+          <MenuOption icon={BarChart2} label="Reportes Globales" onClick={() => setView(ViewState.REPORTS)} />
+          <MenuOption icon={UserCheck} label="Empleados" onClick={() => console.log('Empleados')} />
+          
+          {/* BOTÓN TURNOS CONECTADO */}
+          <MenuOption icon={Clock} label="Turnos" onClick={() => setIsShiftManagerOpen(true)} />
+          
+          <MenuOption icon={DollarSign} label="Comisiones" onClick={() => console.log('Comisiones')} />
+          <MenuOption icon={Target} label="Metas" onClick={() => console.log('Metas')} />
+        </DashboardCard>
 
-            // Nuevos iconos de tu captura
-            { label: 'Stock Mínimo', icon: BoxesIcon, action: () => handleNavigation(ViewState.INVENTORY_MIN_STOCK) },
-          ]}
-/>
+        {/* 7. TIENDA ONLINE (Indigo) */}
+        <DashboardCard title="Tienda Online" headerColor="bg-indigo-500">
+          <MenuOption icon={Globe} label="Pedidos Web" onClick={() => console.log('Web')} />
+          <MenuOption icon={Smartphone} label="Apps Delivery" onClick={() => console.log('Apps')} />
+          <MenuOption icon={RefreshCw} label="Sincronización" onClick={() => console.log('Sync')} />
+          <MenuOption icon={Wifi} label="Conexiones API" onClick={() => console.log('API')} />
+        </DashboardCard>
 
-        {/* --- MARKETING --- */}
-        <MenuSection 
-          title="Marketing y Lealtad" 
-          gradient="bg-gradient-to-r from-pink-600 to-pink-400"
-          items={[
-            { label: 'Promociones', icon: Megaphone, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Puntos', icon: Gift, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Descuentos', icon: Percent, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Clientes VIP', icon: Crown, action: () => handleNavigation('COMING_SOON') },
-          ]}
-        />
-
-        {/* --- GESTIÓN --- */}
-        <MenuSection 
-          title="Gestión del Negocio" 
-          gradient="bg-gradient-to-r from-cyan-600 to-cyan-400"
-          items={[
-            { label: 'Reportes Globales', icon: PieChart, action: () => handleNavigation('REPORTS') },
-            { label: 'Empleados', icon: Users, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Turnos', icon: Clock, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Comisiones', icon: BadgeDollarSign, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Metas', icon: Target, action: () => handleNavigation('COMING_SOON') },
-          ]}
-        />
-
-        {/* --- TIENDA ONLINE --- */}
-        <MenuSection 
-          title="Tienda Online" 
-          gradient="bg-gradient-to-r from-indigo-600 to-indigo-400"
-          items={[
-            { label: 'Pedidos Web', icon: Globe, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Apps Delivery', icon: Smartphone, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Sincronización', icon: RefreshCw, action: () => handleNavigation('COMING_SOON') },
-            { label: 'Conexiones API', icon: Wifi, action: () => handleNavigation('COMING_SOON') },
-          ]}
-        />
-
-        {/* --- CONFIGURACIÓN --- */}
-        <MenuSection 
-          title="Configuración Sistema" 
-          gradient="bg-gradient-to-r from-slate-700 to-slate-500"
-          items={[
-            { label: 'Hardware / Imp.', icon: Printer, action: () => setView('CONF_HARDWARE') },
-            { label: 'Impuestos', icon: FileSpreadsheet, action: () => setView('CONF_TAXES') },
-            { label: 'Base de Datos', icon: Database, action: () => setView('CONF_DATABASE') },
-            { label: 'Usuarios Sistema', icon: UserCog, action: () => setView('CONF_USERS') },
-          ]}
-        />
+        {/* 8. CONFIGURACIÓN (Gris Azulado) */}
+        <DashboardCard title="Configuración Sistema" headerColor="bg-slate-600">
+          <MenuOption icon={Printer} label="Hardware / Imp." onClick={() => setView(ViewState.CONF_HARDWARE)} />
+          <MenuOption icon={FileText} label="Impuestos" onClick={() => setView(ViewState.CONF_TAXES)} />
+          <MenuOption icon={Database} label="Base de Datos" onClick={() => console.log('DB')} />
+          <MenuOption icon={Users} label="Usuarios Sistema" onClick={() => setView(ViewState.CONF_USERS)} />
+        </DashboardCard>
 
       </div>
     </div>
   );
 };
-
-interface MenuItem {
-  label: string;
-  icon: React.ElementType;
-  action: () => void;
-}
-
-const MenuSection = ({ title, gradient, items }: { title: string, gradient: string, items: MenuItem[] }) => (
-  <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full hover:shadow-xl transition-all duration-300 hover:-translate-y-1 group">
-    <div className={`${gradient} px-6 py-4 border-b border-white/10 relative overflow-hidden`}>
-      <div className="absolute top-0 right-0 w-24 h-24 bg-white opacity-10 rounded-full blur-2xl transform translate-x-10 -translate-y-10 group-hover:translate-x-5 transition-transform"></div>
-      <h3 className="text-white font-bold text-lg tracking-wide flex items-center gap-2 relative z-10">
-        {title}
-      </h3>
-    </div>
-
-    <div className="p-6 grid grid-cols-2 gap-y-6 gap-x-4 flex-1 content-start bg-gradient-to-b from-white to-slate-50">
-      {items.map((item, idx) => {
-        const Icon = item.icon;
-        return (
-          <button 
-            key={idx} 
-            onClick={item.action}
-            className="flex flex-col items-center justify-start gap-3 group/item text-center"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-white shadow-sm border border-slate-100 flex items-center justify-center text-slate-500 group-hover/item:scale-110 group-hover/item:text-white group-hover/item:bg-slate-800 group-hover/item:border-transparent group-hover/item:shadow-md transition-all duration-200">
-              <Icon size={22} strokeWidth={1.5} />
-            </div>
-            <span className="text-xs font-semibold text-slate-600 group-hover/item:text-slate-900 leading-tight">
-              {item.label}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  </div>
-);

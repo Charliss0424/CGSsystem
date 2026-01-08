@@ -13,6 +13,7 @@ export const Login: React.FC = () => {
   
   // PIN State
   const [pin, setPin] = useState('');
+  const pinInputRef = useRef<HTMLInputElement>(null);
   
   // Password State
   const [username, setUsername] = useState('');
@@ -28,9 +29,54 @@ export const Login: React.FC = () => {
     if (activeTab === 'barcode' && barcodeRef.current) {
         barcodeRef.current.focus();
     }
+    if (activeTab === 'pin' && pinInputRef.current) {
+        pinInputRef.current.focus();
+    }
   }, [activeTab]);
 
-  // Handle PIN Input
+  // Handle keyboard input for PIN
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (activeTab !== 'pin') return;
+      
+      // Handle number keys (0-9) from both keyboard sections
+      if (e.key >= '0' && e.key <= '9') {
+        e.preventDefault();
+        if (pin.length < 4) {
+          const newPin = pin + e.key;
+          setPin(newPin);
+          if (newPin.length === 4) {
+            attemptLogin('pin', newPin);
+          }
+        }
+      }
+      
+      // Handle backspace
+      else if (e.key === 'Backspace') {
+        e.preventDefault();
+        setPin(prev => prev.slice(0, -1));
+        setError('');
+      }
+      
+      // Handle Enter to submit PIN
+      else if (e.key === 'Enter' && pin.length > 0) {
+        e.preventDefault();
+        attemptLogin('pin', pin);
+      }
+      
+      // Handle Escape to clear PIN
+      else if (e.key === 'Escape') {
+        e.preventDefault();
+        setPin('');
+        setError('');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab, pin]);
+
+  // Handle PIN Input from virtual keyboard
   const handlePinClick = (num: string) => {
       if (pin.length < 4) {
           const newPin = pin + num;
@@ -43,6 +89,11 @@ export const Login: React.FC = () => {
 
   const handleBackspace = () => {
       setPin(prev => prev.slice(0, -1));
+      setError('');
+  };
+
+  const clearPin = () => {
+      setPin('');
       setError('');
   };
 
@@ -164,6 +215,27 @@ export const Login: React.FC = () => {
                     {activeTab === 'pin' && (
                         <div className="animate-fade-in flex flex-col items-center">
                             <h2 className="text-2xl font-bold text-white mb-8">Ingrese su PIN</h2>
+                            
+                            {/* Hidden input para capturar teclado físico */}
+                            <input
+                                ref={pinInputRef}
+                                type="password"
+                                className="opacity-0 absolute h-0 w-0"
+                                value={pin}
+                                onChange={(e) => {
+                                    const value = e.target.value.replace(/\D/g, '');
+                                    if (value.length <= 4) {
+                                        setPin(value);
+                                        if (value.length === 4) {
+                                            attemptLogin('pin', value);
+                                        }
+                                    }
+                                }}
+                                autoComplete="off"
+                                autoFocus
+                            />
+                            
+                            {/* PIN Dots Display */}
                             <div className="flex gap-5 mb-10">
                                 {[0, 1, 2, 3].map(i => (
                                     <div 
@@ -172,6 +244,9 @@ export const Login: React.FC = () => {
                                     ></div>
                                 ))}
                             </div>
+                            
+                                                        
+                            {/* Virtual PIN Pad */}
                             <div className="grid grid-cols-3 gap-5 w-full">
                                 {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
                                     <PinButton 
@@ -180,15 +255,46 @@ export const Login: React.FC = () => {
                                         onClick={() => handlePinClick(num.toString())} 
                                     />
                                 ))}
-                                <div className="flex items-center justify-center"></div>
+                                <button 
+                                    onClick={clearPin}
+                                    className="h-16 rounded-2xl bg-red-500/20 hover:bg-red-500/30 text-red-400 flex items-center justify-center transition-all active:scale-95 border border-red-500/30"
+                                >
+                                    C
+                                </button>
                                 <PinButton num="0" onClick={() => handlePinClick('0')} />
                                 <button 
                                     onClick={handleBackspace}
-                                    className="h-16 w-16 rounded-2xl bg-slate-800/50 hover:bg-red-500/20 text-white flex items-center justify-center transition-all active:scale-95 group border border-white/5"
+                                    className="h-16 rounded-2xl bg-slate-800/50 hover:bg-red-500/20 text-white flex items-center justify-center transition-all active:scale-95 group border border-white/5"
                                 >
                                     <Delete size={24} className="group-hover:text-red-400 transition-colors" />
                                 </button>
                             </div>
+                            
+                            {/* Submit Button */}
+                            <button
+                                onClick={() => pin.length > 0 && attemptLogin('pin', pin)}
+                                disabled={isLoading || pin.length === 0}
+                                className={`mt-8 w-full py-4 rounded-xl font-bold transition-all ${
+                                    isLoading 
+                                        ? 'bg-slate-700 text-slate-300' 
+                                        : pin.length === 4
+                                        ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/20'
+                                        : 'bg-slate-800/50 hover:bg-slate-700/70 text-white'
+                                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            >
+                                {isLoading ? (
+                                    <div className="flex items-center justify-center gap-2">
+                                        <Loader2 className="animate-spin" size={20} />
+                                        <span>Verificando...</span>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center justify-center gap-2">
+                                        <LogIn size={20} />
+                                        <span>{pin.length === 4 ? 'Acceder' : 'Ingresar PIN'}</span>
+                                    </div>
+                                )}
+                            </button>
+                            
                         </div>
                     )}
 
