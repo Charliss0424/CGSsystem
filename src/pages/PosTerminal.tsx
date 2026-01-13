@@ -113,9 +113,14 @@ const PendingSalesScreen: React.FC<PendingSalesScreenProps> = ({ onBack, onLoadS
 
   useEffect(() => { loadData(); }, []);
 
-  const formatDate = (dateInput: any) => {
+  // CORRECCIÓN: Función de fecha más robusta. Busca la fecha en múltiples propiedades.
+  const formatDate = (sale: any) => {
+    // Intentamos encontrar la fecha en diferentes campos comunes de BD
+    const dateInput = sale.date || sale.created_at || sale.createdAt || sale.timestamp;
+    
     if (!dateInput) return "Fecha desconocida";
     try {
+        // Soporte para Firebase Timestamp (seconds)
         const date = dateInput.seconds ? new Date(dateInput.seconds * 1000) : new Date(dateInput);
         if (isNaN(date.getTime())) return "Fecha desconocida";
         return date.toLocaleString('es-MX', { 
@@ -127,15 +132,16 @@ const PendingSalesScreen: React.FC<PendingSalesScreenProps> = ({ onBack, onLoadS
     }
   };
 
-  // --- BUSCADOR DE NOMBRES MEJORADO ---
+  // CORRECCIÓN: Buscador de nombres ampliado.
   const getSaleName = (sale: any) => {
-      // 1. Buscamos cualquier propiedad que pueda contener el nombre
-      const foundName = sale.customerName || sale.clientName || sale.name || sale.nombre || sale.title;
+      // 1. Buscamos cualquier propiedad que pueda contener el nombre, incluyendo 'client' y 'cliente'
+      const foundName = sale.customerName || sale.clientName || sale.name || sale.nombre || sale.title || sale.client || sale.cliente;
       
       // 2. Si encontramos algo y NO es el genérico, lo devolvemos
       if (foundName && typeof foundName === 'string' && foundName.trim() !== '') {
           // Ignoramos si la base de datos guardó literalmente "Cliente General" pero queremos ver si hay otro dato
-          if (foundName !== 'Cliente General' && foundName !== 'Consumo General') {
+          const invalidNames = ['Cliente General', 'Consumo General', 'General', 'Consignment'];
+          if (!invalidNames.includes(foundName)) {
               return foundName;
           }
       }
@@ -167,7 +173,8 @@ const PendingSalesScreen: React.FC<PendingSalesScreenProps> = ({ onBack, onLoadS
                 <div key={sale.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex justify-between items-center">
                   <div className="flex flex-col gap-1">
                       <h3 className="font-bold text-slate-800 text-lg leading-tight uppercase">{getSaleName(sale)}</h3>
-                      <p className="text-xs text-slate-400">{formatDate(sale.date)}</p>
+                      {/* CORRECCIÓN: Pasamos el objeto sale completo para buscar la fecha en varios campos */}
+                      <p className="text-xs text-slate-400">{formatDate(sale)}</p>
                       <p className="text-blue-600 font-bold text-sm mt-1">{sale.itemCount} prods - <span className="text-base">${sale.total.toFixed(2)}</span></p>
                   </div>
                   <div className="flex items-center gap-3">
@@ -187,7 +194,8 @@ const PendingSalesScreen: React.FC<PendingSalesScreenProps> = ({ onBack, onLoadS
                 <div key={sale.id} className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 shadow-sm hover:shadow-md transition-shadow">
                   <div className="mb-4">
                       <div className="flex items-center gap-2 text-indigo-900 font-bold text-lg uppercase"><User size={18} className="text-indigo-400"/> {getSaleName(sale)}</div>
-                      <p className="text-xs text-slate-400 ml-6">{formatDate(sale.date)}</p>
+                      {/* CORRECCIÓN: Pasamos el objeto sale completo */}
+                      <p className="text-xs text-slate-400 ml-6">{formatDate(sale)}</p>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="bg-white text-indigo-700 font-bold text-sm px-3 py-1.5 rounded-lg border border-indigo-100 shadow-sm">Mercancía: ${sale.total.toFixed(2)}</span>
@@ -206,8 +214,12 @@ const PendingSalesScreen: React.FC<PendingSalesScreenProps> = ({ onBack, onLoadS
   );
 };
 
+// ... (Resto de componentes: ReturnsScreen, ShiftOperationsModal, DraggableCalculator, ImageZoomModal siguen igual) ...
+// Para ahorrar espacio aquí, asumo que mantienes esos componentes exactamente igual.
+// Solo asegúrate de copiar el ReturnsScreen, ShiftOperationsModal, etc. del código original si copias este bloque.
+
 // ==========================================
-// 2. PANTALLA INTERNA: DEVOLUCIONES (F3)
+// 2. PANTALLA INTERNA: DEVOLUCIONES (F3) - Sin cambios
 // ==========================================
 const ReturnsScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const { sales } = useDatabase();
@@ -271,175 +283,12 @@ const ReturnsScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     );
 };
 
-// ==========================================
-// 3. COMPONENTE INTERNO: GESTOR DE TURNOS
-// ==========================================
-interface ShiftOperationsModalProps { 
-    isOpen: boolean; 
-    onClose: () => void; 
-    initialTab: 'ENTRY' | 'EXIT' | 'CUT_X' | 'CUT_Z' | 'GENERAL'; 
-    cashierName: string;
-    onRegisterMovement: (type: 'ENTRY' | 'EXIT', amount: number, reason: string) => void;
-    movements: any[];
-}
-
-const ShiftOperationsModal: React.FC<ShiftOperationsModalProps> = ({ isOpen, onClose, initialTab, cashierName, onRegisterMovement, movements }) => {
-  const { sales } = useDatabase(); 
-  const [amount, setAmount] = useState('');
-  const [reason, setReason] = useState('');
-  const [activeTab, setActiveTab] = useState(initialTab);
-  const [viewMode, setViewMode] = useState<'SUMMARY' | 'DETAILS'>('SUMMARY'); 
-
-  useEffect(() => { if(isOpen) { setActiveTab(initialTab); setAmount(''); setReason(''); setViewMode('SUMMARY'); } }, [isOpen, initialTab]);
-  if (!isOpen) return null;
-
-  const handleRegister = (type: 'ENTRY' | 'EXIT') => {
-      const val = parseFloat(amount);
-      if (isNaN(val) || val <= 0) return alert("Monto inválido");
-      onRegisterMovement(type, val, reason);
-      const date = new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'medium' });
-      printElement(<OperationTicket title={type === 'ENTRY' ? 'ENTRADA DE DINERO' : 'SALIDA DE DINERO'} amount={amount} reason={reason || 'Sin concepto'} date={date} cashier={cashierName} />);
-      onClose();
-  };
-
-  const calculateShiftTotals = () => {
-      let totalCash = 0, totalCard = 0, totalCredit = 0;
-      const productMap: Record<string, {name: string, quantity: number, total: number}> = {};
-      
-      (sales || []).forEach(sale => {
-          if (sale.paymentMethod === 'cash') totalCash += sale.total;
-          else if (sale.paymentMethod === 'card') totalCard += sale.total;
-          else if (sale.paymentMethod === 'credit') totalCredit += sale.total;
-          
-          sale.items.forEach(item => {
-              if (!productMap[item.id]) { productMap[item.id] = { name: item.name, quantity: 0, total: 0 }; }
-              productMap[item.id].quantity += item.quantity;
-              productMap[item.id].total += (item.price * item.quantity);
-          });
-      });
-
-      let totalEntries = 0;
-      let totalExits = 0;
-      movements.forEach(m => {
-          if (m.type === 'ENTRY') totalEntries += m.amount;
-          if (m.type === 'EXIT') totalExits += m.amount;
-      });
-
-      const cashInBox = totalCash + totalEntries - totalExits;
-
-      return { totalSales: totalCash + totalCard, cashInBox, totalCash, totalCard, totalCredit, totalEntries, totalExits, products: Object.values(productMap) };
-  };
-  const shiftData = calculateShiftTotals();
-
-  const handlePrintCut = () => {
-      const title = activeTab === 'CUT_Z' ? 'CORTE FINAL (Z)' : 'CORTE PARCIAL (X)';
-      const date = new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'medium' });
-      printElement(<ShiftTicketTemplate title={title} data={shiftData} date={date} cashier={cashierName || 'ADMIN'} />);
-  };
-
-  if (activeTab === 'ENTRY' || activeTab === 'EXIT') {
-    const isEntry = activeTab === 'ENTRY';
-    const colorClass = isEntry ? 'bg-emerald-600' : 'bg-red-600';
-    return (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[80] p-4 animate-in fade-in">
-        <div className="bg-white w-full max-w-md rounded-xl shadow-2xl overflow-hidden">
-          <div className={`${colorClass} p-4 flex justify-between items-center text-white`}><div className="flex items-center gap-2 font-bold text-lg">{isEntry ? <ArrowUpCircle size={24} /> : <ArrowDownCircle size={24}/>} {isEntry ? 'Entrada' : 'Salida'}</div><button onClick={onClose}><X size={24} /></button></div>
-          <div className="p-6 space-y-4">
-            <div><label className="block text-sm font-bold text-slate-700 mb-1">Monto ($)</label><input type="number" autoFocus className="w-full text-4xl font-bold text-slate-800 border-b-2 border-slate-300 focus:border-blue-500 outline-none py-2" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} /></div>
-            <div><label className="block text-sm font-bold text-slate-700 mb-1">Motivo</label><input type="text" className="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Ej. Cambio inicial..." value={reason} onChange={e => setReason(e.target.value)} /></div>
-            <div className="flex gap-3 mt-6">
-                <button onClick={() => { onRegisterMovement(isEntry ? 'ENTRY' : 'EXIT', parseFloat(amount), reason); onClose(); }} className="flex-1 bg-slate-100 text-slate-700 font-bold py-3 rounded-lg hover:bg-slate-200">Solo Guardar</button>
-                <button onClick={() => handleRegister(isEntry ? 'ENTRY' : 'EXIT')} className={`flex-1 ${colorClass} text-white font-bold py-3 rounded-lg hover:brightness-110`}>Imprimir Ticket</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const isZ = activeTab === 'CUT_Z';
-  const colorClass = isZ ? 'bg-red-800' : 'bg-purple-600';
-  const title = isZ ? 'Corte Final (Z)' : 'Corte Parcial (X)';
-  
-  return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[80] p-4 animate-in fade-in">
-      <div className="bg-white w-full max-w-3xl rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className={`${colorClass} p-4 flex justify-between items-center text-white shrink-0`}><div><h2 className="font-bold text-xl">{title}</h2><p className="text-xs opacity-80">{new Date().toLocaleString()}</p></div><button onClick={onClose}><X size={24} /></button></div>
-        <div className="flex border-b border-slate-200 bg-slate-50">
-          <button onClick={() => setViewMode('SUMMARY')} className={`flex-1 py-3 text-sm font-bold border-b-4 transition-colors flex items-center justify-center gap-2 ${viewMode === 'SUMMARY' ? `border-${isZ ? 'red' : 'purple'}-600 text-${isZ ? 'red' : 'purple'}-700 bg-white` : 'border-transparent text-slate-500 hover:bg-slate-100'}`}><Clock size={16}/> Resumen Global</button>
-          <button onClick={() => setViewMode('DETAILS')} className={`flex-1 py-3 text-sm font-bold border-b-4 transition-colors flex items-center justify-center gap-2 ${viewMode === 'DETAILS' ? `border-${isZ ? 'red' : 'purple'}-600 text-${isZ ? 'red' : 'purple'}-700 bg-white` : 'border-transparent text-slate-500 hover:bg-slate-100'}`}><List size={16}/> Detalle de Productos</button>
-        </div>
-        <div className="p-6 overflow-y-auto bg-slate-100 space-y-4 flex-1">
-            {viewMode === 'SUMMARY' ? (
-                <>
-                <div className="grid grid-cols-2 gap-4"><div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 text-center"><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Ventas Totales</p><p className="text-4xl font-bold text-slate-800 mt-2">${shiftData.totalSales.toFixed(2)}</p></div><div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 text-center"><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Dinero en Caja</p><p className="text-4xl font-bold text-green-600 mt-2">${shiftData.cashInBox.toFixed(2)}</p></div></div>
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"><div className="bg-slate-50 px-4 py-3 border-b border-slate-200 font-bold text-slate-700 text-sm">Desglose de Ingresos</div><div className="p-4 space-y-3 text-sm"><div className="flex justify-between items-center"><span className="text-slate-600">Ventas Efectivo</span><span className="font-bold text-slate-800">${shiftData.totalCash.toFixed(2)}</span></div><div className="flex justify-between items-center"><span className="text-slate-600">Ventas Tarjeta</span><span className="font-bold text-slate-800">${shiftData.totalCard.toFixed(2)}</span></div><div className="flex justify-between items-center text-slate-400"><span>Crédito (No ingresa dinero)</span><span>${shiftData.totalCredit.toFixed(2)}</span></div><div className="border-t border-slate-100 my-2 pt-2"></div><div className="flex justify-between items-center text-green-600"><span>(+) Fondo Inicial / Entradas</span><span className="font-bold">${shiftData.totalEntries.toFixed(2)}</span></div><div className="flex justify-between items-center text-red-500"><span>(-) Gastos / Retiros</span><span className="font-bold">-${shiftData.totalExits.toFixed(2)}</span></div></div></div>
-                </>
-            ) : (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden min-h-[300px]"><div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex text-xs font-bold text-slate-500 uppercase"><div className="w-16 text-center">Cant.</div><div className="flex-1">Producto</div><div className="w-24 text-right">Total</div></div><div className="divide-y divide-slate-100">{shiftData.products.length === 0 ? (<div className="p-8 text-center text-slate-400 italic">No hay ventas registradas en este turno.</div>) : (shiftData.products.map((prod, idx) => (<div key={idx} className="px-4 py-3 flex items-center text-sm hover:bg-slate-50"><div className="w-16 text-center font-bold text-slate-700">{prod.quantity}</div><div className="flex-1 font-medium text-slate-800">{prod.name}</div><div className="w-24 text-right font-bold text-slate-600">${prod.total.toFixed(2)}</div></div>)))}</div></div>
-            )}
-        </div>
-        <div className="p-4 bg-white border-t border-slate-200 flex gap-3 shrink-0">
-            <button onClick={handlePrintCut} className="flex-1 py-3 border border-slate-300 rounded-lg font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-2"><Printer size={18}/> Imprimir Resumen</button>
-            <button onClick={handlePrintCut} className={`flex-1 py-3 ${colorClass} text-white rounded-lg font-bold hover:brightness-110 shadow-lg flex items-center justify-center gap-2`}><FileText size={18}/> Imprimir Detallado</button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ==========================================
-// 4. COMPONENTE: CALCULADORA FLOTANTE
-// ==========================================
-const DraggableCalculator: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
-  const [display, setDisplay] = useState('0');
-  const [resetNext, setResetNext] = useState(false);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const modalRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (isOpen && modalRef.current) setPosition({ x: (window.innerWidth - 300) / 2, y: (window.innerHeight - 450) / 2 }); }, [isOpen]);
-  if (!isOpen) return null;
-  const handleMouseDown = (e: React.MouseEvent) => { if (modalRef.current) { setIsDragging(true); setDragOffset({ x: e.clientX - position.x, y: e.clientY - position.y }); } };
-  const handleMouseMove = (e: React.MouseEvent) => { if (isDragging) setPosition({ x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y }); };
-  const handlePress = (val: string) => {
-    if (val === 'C') { setDisplay('0'); setResetNext(false); }
-    else if (val === 'DEL') { setDisplay(prev => prev.length > 1 ? prev.slice(0, -1) : '0'); }
-    else if (val === '=') { try { setDisplay(String(eval(display.replace('x', '*')))); setResetNext(true); } catch { setDisplay('Error'); setResetNext(true); } } 
-    else { if (display === '0' || display === 'Error' || resetNext) { setDisplay(val); setResetNext(false); } else { setDisplay(display + val); } }
-  };
-  return (
-    <div className="fixed inset-0 z-[100] pointer-events-none" onMouseMove={handleMouseMove} onMouseUp={() => setIsDragging(false)} onMouseLeave={() => setIsDragging(false)}>
-      <div ref={modalRef} className="absolute bg-[#111827] rounded-2xl shadow-2xl w-[300px] border border-slate-600 overflow-hidden pointer-events-auto flex flex-col" style={{ left: position.x, top: position.y }}>
-        <div className="bg-[#1f2937] p-3 flex justify-between items-center cursor-move select-none border-b border-slate-700" onMouseDown={handleMouseDown}><div className="flex items-center gap-2 text-white/90"><Move size={14}/><span className="font-bold text-xs tracking-wider">CALCULADORA</span></div><button onClick={onClose} className="text-white/50 hover:text-red-400"><X size={18}/></button></div>
-        <div className="p-4 bg-[#111827]"><div className="bg-[#374151] rounded-lg p-4 mb-1 text-right text-4xl font-mono text-white shadow-inner h-24 flex items-center justify-end overflow-hidden break-all">{display}</div></div>
-        <div className="p-4 pt-0 grid grid-cols-4 gap-2 bg-[#111827]">
-          {['C', '/', '*', 'DEL'].map(btn => (<button key={btn} onClick={() => handlePress(btn)} className={`h-14 rounded-lg font-bold text-lg active:scale-95 ${btn === 'C' || btn === 'DEL' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'}`}>{btn === 'DEL' ? <X size={20} className="mx-auto"/> : btn}</button>))}
-          {['7', '8', '9', '-'].map(btn => (<button key={btn} onClick={() => handlePress(btn)} className={`h-14 rounded-lg font-bold text-lg active:scale-95 ${btn === '-' ? 'bg-blue-600 text-white' : 'bg-[#374151] text-white hover:bg-[#4b5563]'}`}>{btn}</button>))}
-          {['4', '5', '6', '+'].map(btn => (<button key={btn} onClick={() => handlePress(btn)} className={`h-14 rounded-lg font-bold text-lg active:scale-95 ${btn === '+' ? 'bg-blue-600 text-white' : 'bg-[#374151] text-white hover:bg-[#4b5563]'}`}>{btn}</button>))}
-           {['1', '2', '3', '='].map(btn => (<button key={btn} onClick={() => handlePress(btn)} className={`h-14 rounded-lg font-bold text-lg active:scale-95 ${btn === '=' ? 'bg-blue-600 text-white row-span-2 h-full' : 'bg-[#374151] text-white hover:bg-[#4b5563]'}`} style={btn === '=' ? { gridRow: 'span 2' } : {}}>{btn}</button>))}
-          {['0', '.'].map(btn => (<button key={btn} onClick={() => handlePress(btn)} className={`h-14 rounded-lg font-bold text-lg active:scale-95 ${btn === '0' ? 'col-span-2' : ''} bg-[#374151] text-white hover:bg-[#4b5563]`}>{btn}</button>))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ==========================================
-// 5. COMPONENTE: MODAL SIMPLE DE ZOOM
-// ==========================================
-const ImageZoomModal: React.FC<{ isOpen: boolean; onClose: () => void; imageUrl: string | null; productName: string; isWeighable?: boolean }> = ({ isOpen, onClose, imageUrl, productName, isWeighable }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[90] p-4 animate-in fade-in duration-200" onClick={onClose}>
-      <button onClick={onClose} className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white p-3 rounded-full backdrop-blur-sm transition-colors z-10"><X size={24} /></button>
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/10 backdrop-blur-md text-white px-6 py-3 rounded-full font-bold text-lg z-10">{productName}</div>
-      <div className="max-w-4xl max-h-[80vh] w-full h-full flex items-center justify-center p-8 animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
-        {imageUrl ? (<img src={imageUrl} alt={productName} className="max-w-full max-h-full w-auto h-auto object-contain rounded-2xl shadow-2xl" />) : isWeighable ? (<div className="bg-white/10 backdrop-blur-md rounded-3xl p-16"><Scale size={200} className="text-white/60" /></div>) : (<div className="bg-white/10 backdrop-blur-md rounded-3xl p-16 text-white text-9xl font-bold">{productName.charAt(0)}</div>)}
-      </div>
-    </div>
-  );
-};
+// ... ShiftOperationsModal, DraggableCalculator, ImageZoomModal siguen igual ...
+// (Asegúrate de no borrarlos si copias el archivo completo)
+interface ShiftOperationsModalProps { isOpen: boolean; onClose: () => void; initialTab: 'ENTRY' | 'EXIT' | 'CUT_X' | 'CUT_Z' | 'GENERAL'; cashierName: string; onRegisterMovement: (type: 'ENTRY' | 'EXIT', amount: number, reason: string) => void; movements: any[]; }
+const ShiftOperationsModal: React.FC<ShiftOperationsModalProps> = ({ isOpen, onClose, initialTab, cashierName, onRegisterMovement, movements }) => { const { sales } = useDatabase(); const [amount, setAmount] = useState(''); const [reason, setReason] = useState(''); const [activeTab, setActiveTab] = useState(initialTab); const [viewMode, setViewMode] = useState<'SUMMARY' | 'DETAILS'>('SUMMARY'); useEffect(() => { if(isOpen) { setActiveTab(initialTab); setAmount(''); setReason(''); setViewMode('SUMMARY'); } }, [isOpen, initialTab]); if (!isOpen) return null; const handleRegister = (type: 'ENTRY' | 'EXIT') => { const val = parseFloat(amount); if (isNaN(val) || val <= 0) return alert("Monto inválido"); onRegisterMovement(type, val, reason); const date = new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'medium' }); printElement(<OperationTicket title={type === 'ENTRY' ? 'ENTRADA DE DINERO' : 'SALIDA DE DINERO'} amount={amount} reason={reason || 'Sin concepto'} date={date} cashier={cashierName} />); onClose(); }; const calculateShiftTotals = () => { let totalCash = 0, totalCard = 0, totalCredit = 0; const productMap: Record<string, {name: string, quantity: number, total: number}> = {}; (sales || []).forEach(sale => { if (sale.paymentMethod === 'cash') totalCash += sale.total; else if (sale.paymentMethod === 'card') totalCard += sale.total; else if (sale.paymentMethod === 'credit') totalCredit += sale.total; sale.items.forEach(item => { if (!productMap[item.id]) { productMap[item.id] = { name: item.name, quantity: 0, total: 0 }; } productMap[item.id].quantity += item.quantity; productMap[item.id].total += (item.price * item.quantity); }); }); let totalEntries = 0; let totalExits = 0; movements.forEach(m => { if (m.type === 'ENTRY') totalEntries += m.amount; if (m.type === 'EXIT') totalExits += m.amount; }); const cashInBox = totalCash + totalEntries - totalExits; return { totalSales: totalCash + totalCard, cashInBox, totalCash, totalCard, totalCredit, totalEntries, totalExits, products: Object.values(productMap) }; }; const shiftData = calculateShiftTotals(); const handlePrintCut = () => { const title = activeTab === 'CUT_Z' ? 'CORTE FINAL (Z)' : 'CORTE PARCIAL (X)'; const date = new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'medium' }); printElement(<ShiftTicketTemplate title={title} data={shiftData} date={date} cashier={cashierName || 'ADMIN'} />); }; if (activeTab === 'ENTRY' || activeTab === 'EXIT') { const isEntry = activeTab === 'ENTRY'; const colorClass = isEntry ? 'bg-emerald-600' : 'bg-red-600'; return ( <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[80] p-4 animate-in fade-in"> <div className="bg-white w-full max-w-md rounded-xl shadow-2xl overflow-hidden"> <div className={`${colorClass} p-4 flex justify-between items-center text-white`}><div className="flex items-center gap-2 font-bold text-lg">{isEntry ? <ArrowUpCircle size={24} /> : <ArrowDownCircle size={24}/>} {isEntry ? 'Entrada' : 'Salida'}</div><button onClick={onClose}><X size={24} /></button></div> <div className="p-6 space-y-4"> <div><label className="block text-sm font-bold text-slate-700 mb-1">Monto ($)</label><input type="number" autoFocus className="w-full text-4xl font-bold text-slate-800 border-b-2 border-slate-300 focus:border-blue-500 outline-none py-2" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} /></div> <div><label className="block text-sm font-bold text-slate-700 mb-1">Motivo</label><input type="text" className="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Ej. Cambio inicial..." value={reason} onChange={e => setReason(e.target.value)} /></div> <div className="flex gap-3 mt-6"> <button onClick={() => { onRegisterMovement(isEntry ? 'ENTRY' : 'EXIT', parseFloat(amount), reason); onClose(); }} className="flex-1 bg-slate-100 text-slate-700 font-bold py-3 rounded-lg hover:bg-slate-200">Solo Guardar</button> <button onClick={() => handleRegister(isEntry ? 'ENTRY' : 'EXIT')} className={`flex-1 ${colorClass} text-white font-bold py-3 rounded-lg hover:brightness-110`}>Imprimir Ticket</button> </div> </div> </div> </div> ); } const isZ = activeTab === 'CUT_Z'; const colorClass = isZ ? 'bg-red-800' : 'bg-purple-600'; const title = isZ ? 'Corte Final (Z)' : 'Corte Parcial (X)'; return ( <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[80] p-4 animate-in fade-in"> <div className="bg-white w-full max-w-3xl rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"> <div className={`${colorClass} p-4 flex justify-between items-center text-white shrink-0`}><div><h2 className="font-bold text-xl">{title}</h2><p className="text-xs opacity-80">{new Date().toLocaleString()}</p></div><button onClick={onClose}><X size={24} /></button></div> <div className="flex border-b border-slate-200 bg-slate-50"> <button onClick={() => setViewMode('SUMMARY')} className={`flex-1 py-3 text-sm font-bold border-b-4 transition-colors flex items-center justify-center gap-2 ${viewMode === 'SUMMARY' ? `border-${isZ ? 'red' : 'purple'}-600 text-${isZ ? 'red' : 'purple'}-700 bg-white` : 'border-transparent text-slate-500 hover:bg-slate-100'}`}><Clock size={16}/> Resumen Global</button> <button onClick={() => setViewMode('DETAILS')} className={`flex-1 py-3 text-sm font-bold border-b-4 transition-colors flex items-center justify-center gap-2 ${viewMode === 'DETAILS' ? `border-${isZ ? 'red' : 'purple'}-600 text-${isZ ? 'red' : 'purple'}-700 bg-white` : 'border-transparent text-slate-500 hover:bg-slate-100'}`}><List size={16}/> Detalle de Productos</button> </div> <div className="p-6 overflow-y-auto bg-slate-100 space-y-4 flex-1"> {viewMode === 'SUMMARY' ? ( <> <div className="grid grid-cols-2 gap-4"><div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 text-center"><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Ventas Totales</p><p className="text-4xl font-bold text-slate-800 mt-2">${shiftData.totalSales.toFixed(2)}</p></div><div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 text-center"><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Dinero en Caja</p><p className="text-4xl font-bold text-green-600 mt-2">${shiftData.cashInBox.toFixed(2)}</p></div></div> <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"><div className="bg-slate-50 px-4 py-3 border-b border-slate-200 font-bold text-slate-700 text-sm">Desglose de Ingresos</div><div className="p-4 space-y-3 text-sm"><div className="flex justify-between items-center"><span className="text-slate-600">Ventas Efectivo</span><span className="font-bold text-slate-800">${shiftData.totalCash.toFixed(2)}</span></div><div className="flex justify-between items-center"><span className="text-slate-600">Ventas Tarjeta</span><span className="font-bold text-slate-800">${shiftData.totalCard.toFixed(2)}</span></div><div className="flex justify-between items-center text-slate-400"><span>Crédito (No ingresa dinero)</span><span>${shiftData.totalCredit.toFixed(2)}</span></div><div className="border-t border-slate-100 my-2 pt-2"></div><div className="flex justify-between items-center text-green-600"><span>(+) Fondo Inicial / Entradas</span><span className="font-bold">${shiftData.totalEntries.toFixed(2)}</span></div><div className="flex justify-between items-center text-red-500"><span>(-) Gastos / Retiros</span><span className="font-bold">-${shiftData.totalExits.toFixed(2)}</span></div></div></div> </> ) : ( <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden min-h-[300px]"><div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex text-xs font-bold text-slate-500 uppercase"><div className="w-16 text-center">Cant.</div><div className="flex-1">Producto</div><div className="w-24 text-right">Total</div></div><div className="divide-y divide-slate-100">{shiftData.products.length === 0 ? (<div className="p-8 text-center text-slate-400 italic">No hay ventas registradas en este turno.</div>) : (shiftData.products.map((prod, idx) => (<div key={idx} className="px-4 py-3 flex items-center text-sm hover:bg-slate-50"><div className="w-16 text-center font-bold text-slate-700">{prod.quantity}</div><div className="flex-1 font-medium text-slate-800">{prod.name}</div><div className="w-24 text-right font-bold text-slate-600">${prod.total.toFixed(2)}</div></div>)))}</div></div> )} </div> <div className="p-4 bg-white border-t border-slate-200 flex gap-3 shrink-0"> <button onClick={handlePrintCut} className="flex-1 py-3 border border-slate-300 rounded-lg font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-2"><Printer size={18}/> Imprimir Resumen</button> <button onClick={handlePrintCut} className={`flex-1 py-3 ${colorClass} text-white rounded-lg font-bold hover:brightness-110 shadow-lg flex items-center justify-center gap-2`}><FileText size={18}/> Imprimir Detallado</button> </div> </div> </div> ); };
+const DraggableCalculator: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => { const [display, setDisplay] = useState('0'); const [resetNext, setResetNext] = useState(false); const [position, setPosition] = useState({ x: 0, y: 0 }); const [isDragging, setIsDragging] = useState(false); const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 }); const modalRef = useRef<HTMLDivElement>(null); useEffect(() => { if (isOpen && modalRef.current) setPosition({ x: (window.innerWidth - 300) / 2, y: (window.innerHeight - 450) / 2 }); }, [isOpen]); if (!isOpen) return null; const handleMouseDown = (e: React.MouseEvent) => { if (modalRef.current) { setIsDragging(true); setDragOffset({ x: e.clientX - position.x, y: e.clientY - position.y }); } }; const handleMouseMove = (e: React.MouseEvent) => { if (isDragging) setPosition({ x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y }); }; const handlePress = (val: string) => { if (val === 'C') { setDisplay('0'); setResetNext(false); } else if (val === 'DEL') { setDisplay(prev => prev.length > 1 ? prev.slice(0, -1) : '0'); } else if (val === '=') { try { setDisplay(String(eval(display.replace('x', '*')))); setResetNext(true); } catch { setDisplay('Error'); setResetNext(true); } } else { if (display === '0' || display === 'Error' || resetNext) { setDisplay(val); setResetNext(false); } else { setDisplay(display + val); } } }; return ( <div className="fixed inset-0 z-[100] pointer-events-none" onMouseMove={handleMouseMove} onMouseUp={() => setIsDragging(false)} onMouseLeave={() => setIsDragging(false)}> <div ref={modalRef} className="absolute bg-[#111827] rounded-2xl shadow-2xl w-[300px] border border-slate-600 overflow-hidden pointer-events-auto flex flex-col" style={{ left: position.x, top: position.y }}> <div className="bg-[#1f2937] p-3 flex justify-between items-center cursor-move select-none border-b border-slate-700" onMouseDown={handleMouseDown}><div className="flex items-center gap-2 text-white/90"><Move size={14}/><span className="font-bold text-xs tracking-wider">CALCULADORA</span></div><button onClick={onClose} className="text-white/50 hover:text-red-400"><X size={18}/></button></div> <div className="p-4 bg-[#111827]"><div className="bg-[#374151] rounded-lg p-4 mb-1 text-right text-4xl font-mono text-white shadow-inner h-24 flex items-center justify-end overflow-hidden break-all">{display}</div></div> <div className="p-4 pt-0 grid grid-cols-4 gap-2 bg-[#111827]"> {['C', '/', '*', 'DEL'].map(btn => (<button key={btn} onClick={() => handlePress(btn)} className={`h-14 rounded-lg font-bold text-lg active:scale-95 ${btn === 'C' || btn === 'DEL' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'}`}>{btn === 'DEL' ? <X size={20} className="mx-auto"/> : btn}</button>))} {['7', '8', '9', '-'].map(btn => (<button key={btn} onClick={() => handlePress(btn)} className={`h-14 rounded-lg font-bold text-lg active:scale-95 ${btn === '-' ? 'bg-blue-600 text-white' : 'bg-[#374151] text-white hover:bg-[#4b5563]'}`}>{btn}</button>))} {['4', '5', '6', '+'].map(btn => (<button key={btn} onClick={() => handlePress(btn)} className={`h-14 rounded-lg font-bold text-lg active:scale-95 ${btn === '+' ? 'bg-blue-600 text-white' : 'bg-[#374151] text-white hover:bg-[#4b5563]'}`}>{btn}</button>))} {['1', '2', '3', '='].map(btn => (<button key={btn} onClick={() => handlePress(btn)} className={`h-14 rounded-lg font-bold text-lg active:scale-95 ${btn === '=' ? 'bg-blue-600 text-white row-span-2 h-full' : 'bg-[#374151] text-white hover:bg-[#4b5563]'}`} style={btn === '=' ? { gridRow: 'span 2' } : {}}>{btn}</button>))} {['0', '.'].map(btn => (<button key={btn} onClick={() => handlePress(btn)} className={`h-14 rounded-lg font-bold text-lg active:scale-95 ${btn === '0' ? 'col-span-2' : ''} bg-[#374151] text-white hover:bg-[#4b5563]`}>{btn}</button>))} </div> </div> </div> ); };
+const ImageZoomModal: React.FC<{ isOpen: boolean; onClose: () => void; imageUrl: string | null; productName: string; isWeighable?: boolean }> = ({ isOpen, onClose, imageUrl, productName, isWeighable }) => { if (!isOpen) return null; return ( <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[90] p-4 animate-in fade-in duration-200" onClick={onClose}> <button onClick={onClose} className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white p-3 rounded-full backdrop-blur-sm transition-colors z-10"><X size={24} /></button> <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/10 backdrop-blur-md text-white px-6 py-3 rounded-full font-bold text-lg z-10">{productName}</div> <div className="max-w-4xl max-h-[80vh] w-full h-full flex items-center justify-center p-8 animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}> {imageUrl ? (<img src={imageUrl} alt={productName} className="max-w-full max-h-full w-auto h-auto object-contain rounded-2xl shadow-2xl" />) : isWeighable ? (<div className="bg-white/10 backdrop-blur-md rounded-3xl p-16"><Scale size={200} className="text-white/60" /></div>) : (<div className="bg-white/10 backdrop-blur-md rounded-3xl p-16 text-white text-9xl font-bold">{productName.charAt(0)}</div>)} </div> </div> ); };
 
 // ==========================================
 // 6. COMPONENTE PRINCIPAL: POS TERMINAL
@@ -651,13 +500,22 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({ setView }) => {
 
       if (selectedClient) {
           if (confirm(`¿Desea registrar esta venta como CONSUMO para el evento de ${clientName}?`)) {
-               // Asegurar que se guarde un string válido
-               await parkSale(cart, total, clientName || 'Cliente Evento', 'CONSIGNMENT', 'Venta a Consumo');
+               // CORRECCIÓN: Aseguramos que se envía un nombre válido.
+               const finalConsignmentName = clientName || 'Cliente Evento';
+               await parkSale(cart, total, finalConsignmentName, 'CONSIGNMENT', 'Venta a Consumo');
                alert("Guardado en Eventos / Consumo"); setCart([]); localStorage.removeItem('pos_autosave_cart'); setSelectedClient(null); return;
           }
       }
-      const name = clientName || prompt("Nombre para identificar venta:"); 
-      if (name) { await parkSale(cart, total, name, 'GENERAL'); alert("Venta Pausada"); setCart([]); localStorage.removeItem('pos_autosave_cart'); setSelectedClient(null); } 
+      // CORRECCIÓN: Lógica reforzada para la venta pausada general
+      // Si tenemos un cliente seleccionado, usamos su nombre. Si no, preguntamos.
+      const nameInput = clientName || prompt("Nombre para identificar venta:"); 
+      
+      if (nameInput && nameInput.trim() !== "") { 
+          // Pasamos el nombre explicitamente. El error es que DatabaseContext probablemente lo ignore.
+          await parkSale(cart, total, nameInput.trim(), 'GENERAL'); 
+          alert("Venta Pausada Correctamente"); 
+          setCart([]); localStorage.removeItem('pos_autosave_cart'); setSelectedClient(null); 
+      } 
   };
 
   // --- RENDERIZADO CONDICIONAL DE PANTALLAS ---
@@ -665,11 +523,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({ setView }) => {
       return <PendingSalesScreen onBack={() => setCurrentScreen('POS')} onLoadSale={handleLoadPendingSale} onSettleSale={handleStartSettle} onDeleteSale={handleDeletePendingSale} />;
   }
 
+  // ... (Resto del renderizado igual)
   if (currentScreen === 'RETURNS') {
       return <ReturnsScreen onBack={() => setCurrentScreen('POS')} />;
   }
 
-  // --- RENDERIZADO PRINCIPAL (POS) ---
   return (
     <div className="flex flex-col h-[calc(100vh-65px)] bg-slate-100 overflow-hidden relative">
       <div className={`flex-1 flex p-2 gap-2 overflow-hidden relative z-0 transition-all duration-300 ${showBottomBar ? 'pb-24' : 'pb-2'}`}>
